@@ -1,0 +1,254 @@
+name: release
+
+# Two jobs, two triggers.
+#   render - a maintainer dispatches it; it writes values.tfvars + EXPECTED.md and
+#            opens the release PR. Nobody types a digest into a file.
+#   tag    - fires when that PR merges; it tags main and creates the GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v1.1.0"
+        required: true
+      keygen_digest:
+        description: "keygen image digest (sha256:...)"
+        required: true
+      teecryptor_digest:
+        description: "teecryptor image digest (sha256:...)"
+        required: true
+      zeek_digest:
+        description: "zee-k image digest (sha256:...)"
+        required: true
+      ceremony:
+        description: "Ceremony release - grants write access for the key ceremony"
+        type: boolean
+        default: false
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  render:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
+      TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
+      ZEEK_DIGEST: ${{ inputs.zeek_digest }}
+      CEREMONY: ${{ inputs.ceremony }}
+      COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject a malformed tag, digest or compute project
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must be vX.Y.Z, got '$TAG'"
+            exit 1
+          fi
+          for d in "$KEYGEN_DIGEST" "$TEECRYPTOR_DIGEST" "$ZEEK_DIGEST"; do
+            if ! [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::not a canonical digest: '$d'"
+              exit 1
+            fi
+          done
+          if [[ -z "$COMPUTE_PROJECT" ]]; then
+            echo "::error::repository variable FHENIX_COMPUTE_PROJECT is not set"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists; a tag is never moved"
+            exit 1
+          fi
+
+      - name: Render values.tfvars and EXPECTED.md
+        run: |
+          set -euo pipefail
+          if [[ "$CEREMONY" == "true" ]]; then
+            printf '%s\n' \
+              '# Ceremony release: our enclave may add ONE version to each secret.' \
+              '# The next release drops this line; re-applying then removes the' \
+              '# write binding (the plan shows exactly 2 destroys).' \
+              'grant_write_access = true' > grant.txt
+            word='GRANTED - this is a ceremony release'
+            ceremony_bool='true'
+          else
+            echo '# Not a ceremony release: write access stays frozen (module default).' > grant.txt
+            word='frozen'
+            ceremony_bool='false'
+          fi
+          render() {
+            sed -e "s|__TAG__|$TAG|g" \
+                -e "s|__COMPUTE_PROJECT__|$COMPUTE_PROJECT|g" \
+                -e "s|__KEYGEN_DIGEST__|$KEYGEN_DIGEST|g" \
+                -e "s|__TEECRYPTOR_DIGEST__|$TEECRYPTOR_DIGEST|g" \
+                -e "s|__ZEEK_DIGEST__|$ZEEK_DIGEST|g" \
+                -e "s|__CEREMONY_WORD__|$word|g" \
+                -e "s|__CEREMONY_BOOL__|$ceremony_bool|g" \
+                "$1"
+          }
+          # `sed r` splices the file in, so the multi-line ceremony block survives.
+          render .github/release-templates/values.tfvars.tmpl \
+            | sed -e '/__GRANT_WRITE_ACCESS__/r grant.txt' \
+                  -e '/__GRANT_WRITE_ACCESS__/d' \
+            > values.tfvars
+          # Compare against the previous tag so EXPECTED.md states the exact
+          # before/after, not just a shape. Pure git - no credentials needed.
+          prev_tag="$(git tag --sort=-v:refname | head -1)"
+          prev_file=""
+          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
+            prev_file=prev-values.tfvars
+          else
+            prev_tag=""
+          fi
+          .github/scripts/render-diff.sh "$prev_tag" "$prev_file" values.tfvars "$TAG" > diff.md
+
+          render .github/release-templates/EXPECTED.md.tmpl \
+            | sed -e '/__PREVIOUS_DIFF__/r diff.md' \
+                  -e '/__PREVIOUS_DIFF__/d' \
+            > EXPECTED.md
+          rm -f grant.txt diff.md prev-values.tfvars
+          echo "--- values.tfvars"
+          cat values.tfvars
+          echo "--- EXPECTED.md"
+          cat EXPECTED.md
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Check the rendered var-file and the module
+        run: |
+          set -euo pipefail
+          # fmt parses the HCL, so a malformed render fails here.
+          terraform fmt -check -diff values.tfvars
+          terraform -chdir=partner init -backend=false -input=false
+          terraform -chdir=partner validate
+          # A real `plan` needs GCP credentials, which this repo deliberately has
+          # none of. The var-file is proved against a live project by the partner,
+          # and by the Fhenix re-apply of staging from the tag - not here.
+
+      - name: Prepend the CHANGELOG entry
+        run: |
+          set -euo pipefail
+          if [[ "$CEREMONY" == "true" ]]; then
+            ceremony_line='**Ceremony release** - write access is granted for this apply.'
+          else
+            ceremony_line='Not a ceremony release - write access stays frozen.'
+          fi
+          printf '%s\n' \
+            "## $TAG - $(date -u +%Y-%m-%d)" \
+            "" \
+            "$ceremony_line" \
+            "" \
+            "| Image | Digest |" \
+            "|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "" > entry.md
+          awk 'NR==FNR { e = e $0 ORS; next }
+               !done && /^## / { printf "%s", e; done = 1 }
+               { print }' entry.md CHANGELOG.md > CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+          rm entry.md
+
+      - name: Open the release PR
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            "Rendered by \`release.yml\`. Merging this PR tags \`main\` as \`$TAG\`" \
+            "and creates the GitHub Release." \
+            "" \
+            "| Image | Digest |" \
+            "|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "" \
+            "Ceremony: \`$CEREMONY\`. Compute project: \`$COMPUTE_PROJECT\`." \
+            "" \
+            "Review \`values.tfvars\` and \`EXPECTED.md\` against the build outputs" \
+            "before merging." > body.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="release/$TAG"
+          git checkout -b "$branch"
+          git add -f values.tfvars EXPECTED.md CHANGELOG.md
+          git commit -m "release $TAG"
+          git push -u origin "$branch"
+          gh pr create --title "release $TAG" --base main --head "$branch" --body-file body.md
+
+  tag:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.merged == true
+      && startsWith(github.event.pull_request.title, 'release v')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Tag main and create the Release
+        run: |
+          set -euo pipefail
+          tag="${PR_TITLE#release }"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::PR title does not carry a vX.Y.Z tag: '$PR_TITLE'"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::tag $tag already exists; a tag is never moved"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag"
+          git push origin "$tag"
+          gh release create "$tag" --title "$tag" --notes "Release notes follow."
+
+      - name: Write the source-tarball sha256 into the release notes
+        run: |
+          set -euo pipefail
+          tag="${PR_TITLE#release }"
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
+          # GitHub generates the tarball on first request; retry until it is there.
+          ok=""
+          for _ in 1 2 3 4 5; do
+            if curl -fsSL "$url" -o src.tar.gz; then ok=1; break; fi
+            sleep 5
+          done
+          if [[ -z "$ok" ]]; then
+            echo "::error::could not fetch $url to hash it"
+            exit 1
+          fi
+          sum=$(sha256sum src.tar.gz | cut -d" " -f1)
+          printf '%s\n' \
+            "Source tarball \`${tag}.tar.gz\` sha256:" \
+            "" \
+            '```' \
+            "$sum" \
+            '```' \
+            "" \
+            "Verify what you cloned:" \
+            "" \
+            '```bash' \
+            "curl -sL $url | shasum -a 256" \
+            '```' \
+            "" \
+            "See \`CHANGELOG.md\` and \`EXPECTED.md\` at this tag." > notes.md
+          gh release edit "$tag" --notes-file notes.md

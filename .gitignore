@@ -1,0 +1,9 @@
+# Deployment input, never code. The partner's own values never enter this repo.
+terraform.tfvars
+*.auto.tfvars
+
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log

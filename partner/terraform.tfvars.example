@@ -1,0 +1,47 @@
+# You do not need this file.
+#
+# The values that used to live in a `terraform.tfvars` now come from
+# `values.tfvars` at the root of this repository. It is rendered by
+# `.github/workflows/release.yml` and carried by the release tag, so every partner
+# applies byte-identical values. Your own project id is the single value you supply,
+# and you pass it on the command line:
+#
+#   terraform init -reconfigure -input=false \
+#     -backend-config="bucket=<your-project>-tfstate" \
+#     -backend-config="prefix=cofhe-tdx-keygen/partner"
+#   terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project>
+#   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+#
+# This file stays only to show the SHAPE of what `values.tfvars` carries. Placeholders
+# are in <angle brackets>; `fhenix-compute-project` stands in until the real Fhenix
+# compute project is chosen. NEVER commit a real `terraform.tfvars` — it is gitignored.
+
+partner_project_id = "<your-project>"          # you pass this with -var, not in a file
+service_project_id = "fhenix-compute-project"  # Fhenix compute project; the write CEL pins it
+
+# Only this exact keygen image may WRITE your share. Required. Terraform rejects
+# anything that is not sha256: + 64 lowercase hex.
+image_digest = "sha256:<keygen image digest>"
+
+# Ceremony-only. The module default is false (write frozen). This line is present in
+# the `values.tfvars` of a ceremony release and ABSENT in the one after it; applying
+# the next tag removes the write binding (the plan shows exactly 2 destroys).
+grant_write_access = true
+
+# Only these exact consumer images may READ your share — each on ONE secret.
+attested_readers = {
+  teecryptor = {
+    gce_project_id = "fhenix-compute-project"
+    image_digest   = "sha256:<teecryptor image digest>"
+    secret_id      = "cofhe-tee-fhe-priv"
+  }
+  zee-k = {
+    gce_project_id = "fhenix-compute-project"
+    image_digest   = "sha256:<zee-k image digest>"
+    secret_id      = "cofhe-tee-zk-signer"
+  }
+}
+
+# Emergency brake (default true): set false to remove your share from the read set.
+# Reversible; the network keeps running while enough partners remain.
+# grant_read_access = false

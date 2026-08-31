@@ -1,0 +1,38 @@
+# Expected values — release __TAG__
+
+Rendered by `.github/workflows/release.yml` from the same inputs as `values.tfvars`.
+Do not edit by hand — the next release overwrites this file.
+
+Check every line below against your own `terraform plan` and your `verify/` output. If
+one string differs, stop and send us the output. Do not repair anything by hand.
+
+| What | Expected |
+|---|---|
+| Fhenix compute project | `__COMPUTE_PROJECT__` |
+| keygen image digest (write gate) | `__KEYGEN_DIGEST__` |
+| teecryptor image digest (read gate on `cofhe-tee-fhe-priv`) | `__TEECRYPTOR_DIGEST__` |
+| zee-k image digest (read gate on `cofhe-tee-zk-signer`) | `__ZEEK_DIGEST__` |
+| write access | `__CEREMONY_WORD__` |
+
+__PREVIOUS_DIFF__
+
+## Your plan
+
+If this is your **first** apply, expect about **15 to add, 0 to change, 0 to destroy**.
+
+If you are **upgrading** from an earlier tag, the table above is the authority: your
+plan must show those CHANGED rows taking effect and nothing else.
+
+## Your verify run
+
+```
+  + SUCCESS = {
+      + partner_project      = "<your-project>"
+      + write_gate_pins      = "__KEYGEN_DIGEST__"
+      + read_gates_pin       = {
+          + teecryptor = "__TEECRYPTOR_DIGEST__"
+          + zee-k      = "__ZEEK_DIGEST__"
+        }
+      + write_access_granted = __CEREMONY_BOOL__
+    }
+```

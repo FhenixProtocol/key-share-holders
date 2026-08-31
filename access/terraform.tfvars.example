@@ -1,0 +1,21 @@
+# Run ONCE per partner project, by the partner (or a project owner in the sim).
+# Needs only owner / projectIamAdmin on the partner project. See ../../PERMISSIONS.md.
+#
+# Usually you don't need a tfvars at all — just pass the project on the CLI:
+#   terraform init -reconfigure \
+#     -backend-config="bucket=<your-project>-tfstate" \
+#     -backend-config="prefix=cofhe-tdx-keygen/access"
+#   terraform apply -var="partner_project_id=<your-project>"
+#
+# `operators` defaults to ["group:protocol@fhenix.io"]; override only to grant a
+# different group.
+#
+# This grants READ-ONLY verification access (two predefined Google roles). It never
+# grants write — the partner runs `partner/` themselves. See main.tf for why.
+
+partner_project_id = "<your-project>"
+# operators = ["group:protocol@fhenix.io"]
+#
+# Revoke Fhenix's read-only access (offboarding, or on request). Reversible; after
+# this every check falls back to asking the partner.
+# grant_view_access = false
