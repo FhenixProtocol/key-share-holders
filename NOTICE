@@ -1,0 +1,14 @@
+Fhenix Non-Commercial Software License — NOTICE
+
+This software incorporates or is based in part on software developed by
+FHE Labs Ltd. ("Fhenix"). The Fhenix-developed portions of this software are
+licensed under the Fhenix Non-Commercial Software License (see LICENSE).
+Commercial use of such portions is not permitted without prior written
+authorization from Fhenix.
+
+Third-Party Components
+----------------------
+
+Any third-party providers, modules, or components used with this Terraform are
+governed by their own licenses and are not relicensed under the Fhenix
+Non-Commercial Software License.
