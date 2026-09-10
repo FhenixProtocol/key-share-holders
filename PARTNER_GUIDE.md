@@ -1,8 +1,29 @@
-# Partner Dev — Initialization
+# Partner Dev — Initializationֿ
 
-## 1. Preqrequisites
+You put the configuration file that we send you
+into it. You apply. This creates two Secret Manager entries and the IAM rules that
+decide **which attested Fhenix enclave can write your key share, and which can read
+it**.
+
+**Time: 1 to 2 hours, one time.** After this, nothing runs on your side. We are on the
+call with you.
+
+**We send you one thing: a release tag in this repository.**
+The tag carries everything — the Terraform, this guide, the `values.tfvars` with
+every shared value already filled in, and the `EXPECTED.md` that lists the exact
+strings your checks must show. Every partner gets the same tag.
+
+**You run each apply in your project. We cannot.** Fhenix has read-only access to
+your project. We check and we advise; you execute. This is by design. The Terraform
+that sets the IAM on your secrets needs one permission
+(`secretmanager.secrets.setIamPolicy`). The holder of that permission can give
+read access on a share to itself. We do not take it. See step 3.
+
+## 1. Prerequisites
 
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
+
+- `terraform` 1.9 or later, and `gcloud`.
 
 ## 2. Create your Terraform state bucket
 
