@@ -1,4 +1,4 @@
-  # Partner Dev — Initialization
+# Partner Dev — Initialization
 
 You put the configuration file that we send you into your clone of this repository. You apply. This creates two Secret Manager entries and the IAM rules that
 decide **which attested Fhenix enclave can write your key share, and which can read
