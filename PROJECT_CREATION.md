@@ -14,4 +14,3 @@ gcloud auth login
 gcloud auth application-default login
 gcloud projects describe <your-project> --format='value(projectId,projectNumber)'
 ```
-s
