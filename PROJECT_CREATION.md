@@ -1,8 +1,6 @@
 # Project Creation
 
-You create a Google Cloud project. 
-
-> **You supply exactly two values: your own project id and the project number**
+You create a Google Cloud project and send us two values: its project id and its project number.
 
 - ## 1. Creation
 - Please create the following:
@@ -15,4 +13,6 @@ You create a Google Cloud project.
 ```bash
 gcloud auth login
 gcloud auth application-default login
+gcloud projects describe <your-project> --format='value(projectId,projectNumber)'
 ```
+s
