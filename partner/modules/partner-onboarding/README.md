@@ -46,18 +46,10 @@ output "onboarding" {
 
 ## Inputs
 
-| Name | Required | Default | Notes |
-|------|----------|---------|-------|
-| `partner_project_id` | yes | — | The partner's project. |
-| `service_project_id` | yes | — | Our compute project. The CEL and the grant pin it. We give this value to the partner. |
-| `secret_ids` | no | `["cofhe-tee-fhe-priv", "cofhe-tee-zk-signer"]` | One secret per audience: FHE private key + decrypt signer (TeeCryptor), and zk signer (ZK verifier). |
-| `image_digest` | no | `""` | A non-empty value pins `attribute.image_digest`. This is the strongest gate. Each new image needs a partner re-apply. An empty value is for development only. |
-| `grant_write_access` | no | `false` | **Frozen by default.** `true` gives our enclave `secretVersionAdder`. Set it only for the apply before a key ceremony. See "Write access is off by default". |
-| `attested_readers` | no | `{}` | Attested consumer reads: `consumer => { gce_project_id, image_digest, secret_id }`. Creates the reader pool (`cofhe-tee-reader-pool`) and one provider per consumer. The CEL pins the compute project and the exact image digest of that consumer (the digest is **required**, canonical sha256). Gives `secretAccessor` on **only** that consumer's secret to the digest-scoped attested principal. See "Attested read access". |
-| `grant_read_access` | no | `true` | `false` **removes** the `secretAccessor` bindings of the attested readers. The pool, the providers and the secrets stay. Reversible. The default is the opposite of `grant_write_access`: reads are the normal state, so `false` is an emergency brake, not a post-bootstrap step. |
-| `pool_id` / `provider_id` | no | `cofhe-tee-keygen-{pool,provider}` | WIP identifiers. |
-| `required_support_attribute` | no | `STABLE` | Rejects DEBUG and experimental images. |
-| `issuer_uri` | no | Confidential Computing issuer | OIDC issuer. |
+The module has 11 input variables. [`variables.tf`](variables.tf) documents each
+one — its type, default, and purpose. [`../../terraform.tfvars.example`](../../terraform.tfvars.example)
+shows a filled-in example. The sections below explain the variables that carry a
+safety decision: the image pin, attested reads, and write access.
 
 ## The return tuple
 
