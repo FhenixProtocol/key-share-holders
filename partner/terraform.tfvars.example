@@ -23,6 +23,10 @@ service_project_id = "fhenix-compute-project"  # Fhenix compute project; the wri
 # anything that is not sha256: + 64 lowercase hex.
 image_digest = "sha256:<keygen image digest>"
 
+# The commit that image was built from, full 40-hex. The apply proves the pair
+# against the public Sigstore log before it pins anything. It never enters the CEL.
+source_sha = "<keygen source commit>"
+
 # Ceremony-only. The module default is false (write frozen). This line is present in
 # the `values.tfvars` of a ceremony release and ABSENT in the one after it; applying
 # the next tag removes the write binding (the plan shows exactly 2 destroys).
@@ -33,11 +37,13 @@ attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-compute-project"
     image_digest   = "sha256:<teecryptor image digest>"
+    source_sha     = "<teecryptor source commit>"
     secret_id      = "cofhe-tee-fhe-priv"
   }
   zee-k = {
     gce_project_id = "fhenix-compute-project"
     image_digest   = "sha256:<zee-k image digest>"
+    source_sha     = "<zee-k source commit>"
     secret_id      = "cofhe-tee-zk-signer"
   }
 }
