@@ -24,6 +24,17 @@ variable "image_digest" {
   description = "Optional exact image pin (sha256:...). Empty = unpinned (early dev). Set to require a partner re-apply on every keygen image rebuild."
 }
 
+variable "source_sha" {
+  type        = string
+  default     = ""
+  description = "Full 40-hex commit that the keygen image_digest was built from. Checked against the public Sigstore log before anything is pinned (see provenance.tf). It is NEVER written into the CEL. Leave empty only while image_digest is empty."
+
+  validation {
+    condition     = var.source_sha == "" || can(regex("^[0-9a-f]{40}$", var.source_sha))
+    error_message = "source_sha must be empty, or a full 40-character lowercase hex commit SHA. The short form is not enough."
+  }
+}
+
 variable "grant_write_access" {
   type        = bool
   default     = false
@@ -34,10 +45,16 @@ variable "attested_readers" {
   type = map(object({
     gce_project_id = string
     image_digest   = string
+    source_sha     = string
     secret_id      = string
   }))
   default     = {}
-  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. Empty = no read path at all."
+  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. source_sha is the commit that digest was built from; it is proven before the apply and never enters the CEL. Empty map = no read path at all."
+
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[0-9a-f]{40}$", r.source_sha))])
+    error_message = "every attested reader must name the full 40-character lowercase hex commit its image was built from. The short form is not enough."
+  }
 }
 
 variable "grant_read_access" {
