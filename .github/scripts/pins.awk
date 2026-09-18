@@ -8,12 +8,22 @@
 /^image_digest/ {
   if (match($0, /sha256:[0-9a-f]{64}/)) print "keygen " substr($0, RSTART, RLENGTH)
 }
+/^source_sha/ {
+  if (match($0, /[0-9a-f]{40}/)) print "keygen-sha " substr($0, RSTART, RLENGTH)
+}
 /^[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*=[[:space:]]*\{/ {
   consumer = $1
 }
 /^[[:space:]]+image_digest/ {
   if (consumer != "" && match($0, /sha256:[0-9a-f]{64}/)) {
     print consumer " " substr($0, RSTART, RLENGTH)
+  }
+}
+# source_sha sits below image_digest in the same block, so `consumer` is still
+# set. Clear it here, at the end of the pair, not at the digest.
+/^[[:space:]]+source_sha/ {
+  if (consumer != "" && match($0, /[0-9a-f]{40}/)) {
+    print consumer "-sha " substr($0, RSTART, RLENGTH)
     consumer = ""
   }
 }
