@@ -9,6 +9,8 @@ terraform {
   backend "gcs" {}
   required_providers {
     google = { source = "hashicorp/google", version = "~> 5.0" }
+    # Runs the provenance check in provenance.tf. It creates nothing.
+    external = { source = "hashicorp/external", version = "~> 2.3" }
   }
 }
 
@@ -28,8 +30,23 @@ module "onboarding" {
   secret_ids         = var.secret_ids
   image_digest       = var.image_digest
   grant_write_access = var.grant_write_access
-  attested_readers   = var.attested_readers
   grant_read_access  = var.grant_read_access
+
+  # source_sha is dropped here, deliberately. It is proof material for the
+  # provenance gate, not gate material. The CEL pins the image digest and
+  # nothing else, so the commit must never reach the module that writes the CEL.
+  # Stripping it in one visible place keeps that invariant readable.
+  attested_readers = {
+    for k, r in var.attested_readers : k => {
+      gce_project_id = r.gce_project_id
+      image_digest   = r.image_digest
+      secret_id      = r.secret_id
+    }
+  }
+
+  # Nothing is created until every digest has been proven to come from the
+  # commit we published beside it.
+  depends_on = [data.external.provenance]
 }
 
 # --- Outputs (handed to the service side) -------------------------------

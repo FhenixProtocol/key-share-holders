@@ -23,6 +23,12 @@ call with you.
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
 
 - `terraform` 1.9 or later, and `gcloud`.
+- `cosign` 2.0 or later. Your apply uses it to prove where each image came from,
+  before it pins anything. Install it with `brew install cosign`, or take a release
+  from https://github.com/sigstore/cosign/releases. Check it with `cosign version`.
+- Network access from the machine that runs terraform to `fulcio.sigstore.dev`,
+  `rekor.sigstore.dev` and `europe-west4-docker.pkg.dev`. The proof is read from the
+  public log, not from us.
 
 ## 2. Create your Terraform state bucket
 
@@ -117,8 +123,10 @@ form:
 ```hcl
 service_project_id = "fhenix-compute-project"
 
-# Only this exact keygen image can WRITE your share.
+# Only this exact keygen image can WRITE your share. source_sha is the commit it
+# was built from.
 image_digest = "sha256:…"
+source_sha   = "…40 hex…"
 
 # Ceremony only. The module default is false (frozen). This line is in the
 # values.tfvars of a ceremony release. It is absent in the release after it.
@@ -126,9 +134,23 @@ grant_write_access = true
 
 # Only these exact consumer images can READ your share. Each reads ONE secret.
 attested_readers = {
-  teecryptor = { gce_project_id = "fhenix-compute-project", image_digest = "sha256:…", secret_id = "cofhe-tee-fhe-priv" }
-  zee-k      = { gce_project_id = "fhenix-compute-project", image_digest = "sha256:…", secret_id = "cofhe-tee-zk-signer" }
+  teecryptor = { gce_project_id = "…", image_digest = "sha256:…", source_sha = "…40 hex…", secret_id = "cofhe-tee-fhe-priv" }
+  zee-k      = { gce_project_id = "…", image_digest = "sha256:…", source_sha = "…40 hex…", secret_id = "cofhe-tee-zk-signer" }
 }
+```
+
+### Where each image came from
+
+`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
+every digest against the public Sigstore log before anything is pinned. A digest that did
+not come from the commit beside it fails your plan, and nothing is written.
+
+To run the same check by hand:
+
+```bash
+cd partner
+./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+# FAIL means: change nothing, send us the output.
 ```
 
 Your own project id is **not** in that file, and is in no file. You pass it with
@@ -321,6 +343,8 @@ continues to work.
 ## Things you must never do
 
 - **Never** make an `image_digest` empty. This removes the pin from the gate.
+- **Never** edit a `source_sha` to make a failing check pass. A failure means the digest
+  and the commit do not belong together. Send it to us.
 - **Never** give `secretAccessor` on a share to a person or to a service account.
 - **Never** delete a secret. Each secret has `prevent_destroy`. Removal of a secret is
   a deliberate, coordinated action.
@@ -340,6 +364,25 @@ continues to work.
 | Always | Keep the project and Secret Manager available. Google manages both. No on-call. | — |
 
 ## Reference
+
+### What the provenance gate checks
+
+A digest says **which** image runs. It cannot say who built it: the attestation token
+carries no repository or commit claim, so your CEL cannot hold that proof. The gate holds
+it instead, one step earlier.
+
+It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
+
+- The signature on that exact digest is in the public Sigstore log.
+- Our workflow file produced it, on `refs/heads/main`, in our repository.
+- It was built from the exact commit in `source_sha`.
+
+A failure stops the run before any IAM changes. The check is a data source, so `-target`
+does not route around it.
+
+You trust the public log, not Fhenix: the check needs no Fhenix credential and no GitHub
+account. It does not say the commit is one you approve of — you choose which of our
+commits you trust, from our public history.
 
 ### What `verify/` checks
 

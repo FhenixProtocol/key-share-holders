@@ -39,15 +39,18 @@ write_state() {
 changed=""
 unchanged=""
 rows=""
-for key in compute keygen teecryptor zee-k; do
+for key in compute keygen keygen-sha teecryptor teecryptor-sha zee-k zee-k-sha; do
   old="$(lookup "$key" /tmp/pins.prev)"
   new="$(lookup "$key" /tmp/pins.new)"
   case "$key" in
-    compute)    label="Fhenix compute project" ;;
-    keygen)     label="keygen (write gate)" ;;
-    teecryptor) label="teecryptor (read gate on cofhe-tee-fhe-priv)" ;;
-    zee-k)      label="zee-k (read gate on cofhe-tee-zk-signer)" ;;
-    *)          label="$key" ;;
+    compute)        label="Fhenix compute project" ;;
+    keygen)         label="keygen (write gate)" ;;
+    keygen-sha)     label="keygen source commit" ;;
+    teecryptor)     label="teecryptor (read gate on cofhe-tee-fhe-priv)" ;;
+    teecryptor-sha) label="teecryptor source commit" ;;
+    zee-k)          label="zee-k (read gate on cofhe-tee-zk-signer)" ;;
+    zee-k-sha)      label="zee-k source commit" ;;
+    *)              label="$key" ;;
   esac
   if [[ "$old" == "$new" ]]; then
     unchanged="$unchanged $key"

@@ -19,6 +19,11 @@ variable "image_digest" {
   default = ""
 }
 
+variable "source_sha" {
+  type    = string
+  default = ""
+}
+
 variable "grant_write_access" {
   type    = bool
   default = false
@@ -28,6 +33,7 @@ variable "attested_readers" {
   type = map(object({
     gce_project_id = string
     image_digest   = string
+    source_sha     = string
     secret_id      = string
   }))
   default = {}

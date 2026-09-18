@@ -13,11 +13,20 @@ on:
       keygen_digest:
         description: "keygen image digest (sha256:...)"
         required: true
+      keygen_sha:
+        description: "keygen source commit (full 40-hex, from the build summary)"
+        required: true
       teecryptor_digest:
         description: "teecryptor image digest (sha256:...)"
         required: true
+      teecryptor_sha:
+        description: "teecryptor source commit (full 40-hex, from the build summary)"
+        required: true
       zeek_digest:
         description: "zee-k image digest (sha256:...)"
+        required: true
+      zeek_sha:
+        description: "zee-k source commit (full 40-hex, from the build summary)"
         required: true
       ceremony:
         description: "Ceremony release - grants write access for the key ceremony"
@@ -37,8 +46,11 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
       KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
+      KEYGEN_SHA: ${{ inputs.keygen_sha }}
       TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
+      TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
       ZEEK_DIGEST: ${{ inputs.zeek_digest }}
+      ZEEK_SHA: ${{ inputs.zeek_sha }}
       CEREMONY: ${{ inputs.ceremony }}
       COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
       GH_TOKEN: ${{ github.token }}
@@ -47,7 +59,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reject a malformed tag, digest or compute project
+      - name: Reject a malformed tag, digest, commit or compute project
         run: |
           set -euo pipefail
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -57,6 +69,15 @@ jobs:
           for d in "$KEYGEN_DIGEST" "$TEECRYPTOR_DIGEST" "$ZEEK_DIGEST"; do
             if ! [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo "::error::not a canonical digest: '$d'"
+              exit 1
+            fi
+          done
+          # The partner proves digest+commit together against the public Sigstore
+          # log before it pins anything. A short SHA does not satisfy cosign, so
+          # reject one here rather than at the partner's plan.
+          for c in "$KEYGEN_SHA" "$TEECRYPTOR_SHA" "$ZEEK_SHA"; do
+            if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::not a full 40-hex commit sha: '$c'"
               exit 1
             fi
           done
@@ -89,8 +110,11 @@ jobs:
             sed -e "s|__TAG__|$TAG|g" \
                 -e "s|__COMPUTE_PROJECT__|$COMPUTE_PROJECT|g" \
                 -e "s|__KEYGEN_DIGEST__|$KEYGEN_DIGEST|g" \
+                -e "s|__KEYGEN_SHA__|$KEYGEN_SHA|g" \
                 -e "s|__TEECRYPTOR_DIGEST__|$TEECRYPTOR_DIGEST|g" \
+                -e "s|__TEECRYPTOR_SHA__|$TEECRYPTOR_SHA|g" \
                 -e "s|__ZEEK_DIGEST__|$ZEEK_DIGEST|g" \
+                -e "s|__ZEEK_SHA__|$ZEEK_SHA|g" \
                 -e "s|__CEREMONY_WORD__|$word|g" \
                 -e "s|__CEREMONY_BOOL__|$ceremony_bool|g" \
                 "$1"
@@ -150,11 +174,11 @@ jobs:
             "" \
             "$ceremony_line" \
             "" \
-            "| Image | Digest |" \
-            "|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "| Image | Digest | Source commit |" \
+            "|---|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" > entry.md
           awk 'NR==FNR { e = e $0 ORS; next }
                !done && /^## / { printf "%s", e; done = 1 }
@@ -169,11 +193,11 @@ jobs:
             "Rendered by \`release.yml\`. Merging this PR tags \`main\` as \`$TAG\`" \
             "and creates the GitHub Release." \
             "" \
-            "| Image | Digest |" \
-            "|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "| Image | Digest | Source commit |" \
+            "|---|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" \
             "Ceremony: \`$CEREMONY\`. Compute project: \`$COMPUTE_PROJECT\`." \
             "" \
