@@ -141,40 +141,17 @@ attested_readers = {
 
 ### Where each image came from
 
-A digest says **which** image runs. It does not say **who built it**, and the
-attestation token carries no repository or commit claim, so your CEL cannot carry that
-proof either.
+`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
+every digest against the public Sigstore log before anything is pinned. A digest that did
+not come from the commit beside it fails your plan, and nothing is written.
 
-`source_sha` closes the gap. Our build signs each image with keyless Cosign: GitHub
-gives the job a short-lived identity, and the signature goes into the **public Sigstore
-transparency log**. The certificate names our repository, our workflow file, the branch
-and the commit.
-
-Your `terraform plan` and `terraform apply` check every digest against that log before
-anything is pinned. A digest that does not come from the commit beside it fails your
-plan, and nothing is written. You cannot forget this step and you cannot skip it.
-
-You can also run the check by hand:
+To run the same check by hand:
 
 ```bash
 cd partner
-./verify-image.sh keygen     "<image_digest>" "<source_sha>"
-./verify-image.sh teecryptor "<image_digest>" "<source_sha>"
-./verify-image.sh zee-k      "<image_digest>" "<source_sha>"
-# pass: "PASS — our workflow built this digest from commit …"
-# fail: "FAIL — the proof does not hold". Change nothing. Send it to us.
+./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+# FAIL means: change nothing, send us the output.
 ```
-
-The registry, the workflow identity and the branch are fixed values inside
-`verify-image.sh`. You never type them. Per release you receive two values per image:
-the digest and the commit.
-
-**You trust the public log, not Fhenix.** The check needs no Fhenix credential and no
-GitHub account. Run it on any machine, including one we have never touched.
-
-**What it does not prove.** It does not say the commit is one you approve of. You
-choose which of our commits you trust, from our public history. This proves only that a
-digest and a commit belong together.
 
 Your own project id is **not** in that file, and is in no file. You pass it with
 `-var partner_project_id=<your-project>` on every command below.
@@ -390,14 +367,22 @@ continues to work.
 
 ### What the provenance gate checks
 
-Runs on every `plan` and every `apply`, in `partner/`, one check per pinned image:
+A digest says **which** image runs. It cannot say who built it: the attestation token
+carries no repository or commit claim, so your CEL cannot hold that proof. The gate holds
+it instead, one step earlier.
+
+It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
 
 - The signature on that exact digest is in the public Sigstore log.
 - Our workflow file produced it, on `refs/heads/main`, in our repository.
 - It was built from the exact commit in `source_sha`.
 
-A failure stops the run before any IAM changes. The check is a data source, so
-`-target` does not route around it.
+A failure stops the run before any IAM changes. The check is a data source, so `-target`
+does not route around it.
+
+You trust the public log, not Fhenix: the check needs no Fhenix credential and no GitHub
+account. It does not say the commit is one you approve of — you choose which of our
+commits you trust, from our public history.
 
 ### What `verify/` checks
 
