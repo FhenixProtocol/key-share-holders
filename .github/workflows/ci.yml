@@ -9,6 +9,41 @@ permissions:
   contents: read
 
 jobs:
+  # verify-image.sh is the only thing between a partner and an unproven pin, and
+  # nothing else here runs it. A syntax error would first appear at a partner's
+  # plan, or at a release dispatch.
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: syntax
+        run: |
+          set -e
+          for f in partner/verify-image.sh .github/scripts/render-diff.sh; do
+            echo "== $f"
+            bash -n "$f"
+          done
+
+      - name: shellcheck
+        run: shellcheck -S warning partner/verify-image.sh .github/scripts/render-diff.sh
+
+      # The script must reject a malformed value before it reaches the network,
+      # and it must refuse an image name it has no constants for.
+      - name: reject bad input
+        run: |
+          set -e
+          fails() {
+            if partner/verify-image.sh "$@" >/dev/null 2>&1; then
+              echo "::error::verify-image.sh accepted bad input: $*"; exit 1
+            fi
+          }
+          fails nosuchimage sha256:$(printf 'a%.0s' {1..64}) $(printf 'b%.0s' {1..40})
+          fails keygen not-a-digest $(printf 'b%.0s' {1..40})
+          fails keygen sha256:$(printf 'a%.0s' {1..64}) short
+          fails keygen sha256:$(printf 'a%.0s' {1..64})
+          echo "all rejected"
+
   terraform:
     runs-on: ubuntu-latest
     steps:

@@ -10,24 +10,27 @@
 #
 # Exit 0 means the proof holds. Any other exit means DO NOT PIN.
 #
-# WHAT THIS PROVES. Our build emits a SLSA build provenance attestation. GitHub
-# gives the job a short-lived identity, Fulcio issues a certificate, and the
-# result is recorded in the PUBLIC Sigstore transparency log. The certificate
-# names the repository, the workflow file, the branch and the commit. This
-# script asserts all four, plus the exact digest. A pass means: our workflow, on
-# main, built this exact image from this exact commit.
+# A pass means this: our workflow, on main, built this exact image from this
+# exact commit. It does NOT mean the commit is one you approve of. You choose
+# which of our commits you trust.
 #
-# WHAT THIS DOES NOT PROVE. It does not say the commit is one you approve of.
-# You choose which commits you trust, from our public history. This tool only
-# ties a digest to a commit.
+# The release tag carries the signed proof for each digest it pins, in ./bundles,
+# so a normal run calls no GitHub API. Set FHENIX_IGNORE_SHIPPED_BUNDLE=1 to
+# download the proof from GitHub instead and compare.
 #
-# The values below are FIXED. They change only if we move a repository or rename
-# a workflow, and then you get a new release of this repo. Per release you
-# receive two values per image: the digest and the commit.
+# The constants below are FIXED. You never type any of them. Per release you
+# receive two values for each image: the digest and the commit.
+#
+# PARTNER_GUIDE.md explains why this is safe when we are the ones who give you
+# the file. Keep that explanation there, not here.
 
 set -euo pipefail
 
 REF="refs/heads/main"
+
+# The bundles ship beside this script, so the path follows the script and not
+# the caller's working directory. Terraform runs it from partner/.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Terraform mode prints a JSON object on stdout, so every human line goes to
 # stderr. Terraform shows stderr when the program fails.
@@ -100,10 +103,8 @@ printf '%s' "${DIGEST}" | grep -Eq '^sha256:[0-9a-f]{64}$' \
 printf '%s' "${COMMIT}" | grep -Eq '^[0-9a-f]{40}$' \
   || die "commit must be 40 lowercase hex characters (the full SHA, not the short one). Got '${COMMIT}'."
 
-for tool in gh jq curl; do
-  command -v "${tool}" >/dev/null 2>&1 \
-    || die "${tool} is not installed. See PARTNER_GUIDE.md, step 1."
-done
+command -v gh >/dev/null 2>&1 \
+  || die "gh is not installed. See PARTNER_GUIDE.md, step 1."
 
 # --source-ref and --source-digest arrived in gh 2.68.0. An older gh exits with
 # "unknown flag", which this script would otherwise report as a failed proof.
@@ -122,7 +123,6 @@ say "Verifying ${IMAGE}"
 say "  image   ${REGISTRY}@${DIGEST}"
 say "  commit  ${COMMIT}"
 say "  built by ${SIGNER_WORKFLOW}@${REF}"
-say ""
 
 # `gh attestation verify` rejects a bundle whose filename does not end in
 # .json or .jsonl, so this cannot be a bare mktemp file.
@@ -140,67 +140,109 @@ response="${workdir}/response.json"
 mkdir -p "${workdir}/docker"
 export DOCKER_CONFIG="${workdir}/docker"
 
-# Fetched anonymously. This endpoint needs no GitHub account, which is what
-# keeps the check independent of any credential we could hand you.
-#
-# Optional, and never required. It only raises the anonymous limit of 60 requests
-# an hour per IP address, which a shared office network can exhaust.
-#
-# Deliberately NOT GITHUB_TOKEN or GH_TOKEN: those are commonly exported on a
-# developer machine, and an expired one would turn a working check into a
-# permanent 401 with advice that never helps.
-auth=()
-if [ -n "${FHENIX_PROVENANCE_TOKEN:-}" ]; then
-  auth=(-H "Authorization: Bearer ${FHENIX_PROVENANCE_TOKEN}")
-fi
-# ${auth[@]+...} because bash 3.2 errors on an empty array under `set -u`.
-http="$(curl -sS -w '%{http_code}' -o "${response}" \
-  ${auth[@]+"${auth[@]}"} \
-  "https://api.github.com/repos/${REPO}/attestations/${DIGEST}" || true)"
+# Used only when the release ships no bundle for this digest.
+fetch_bundle_from_api() {
+  # Checked here, not at the top: a normal apply reads a shipped file and needs
+  # neither of these. The guide says the same, so the two must agree.
+  for tool in jq curl; do
+    command -v "${tool}" >/dev/null 2>&1 \
+      || die "${tool} is not installed, and this digest needs the fallback to api.github.com. See PARTNER_GUIDE.md, step 1."
+  done
 
-if [ "${http}" = "404" ]; then
-  printf '%s\n' "" >&2
-  printf '%s\n' "FAIL — no attestation is published for this digest." >&2
-  printf '%s\n' "DO NOT PIN THIS DIGEST." >&2
-  printf '%s\n' "" >&2
-  printf '%s\n' "This usually means one of:" >&2
-  printf '%s\n' "  - the digest was mistyped or truncated" >&2
-  printf '%s\n' "  - the image predates build provenance, or is a development build" >&2
-  printf '%s\n' "  - the image was not built by our public workflow" >&2
-  printf '%s\n' "" >&2
-  printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
-  exit 1
-fi
-
-# Anything else is OUR side or YOUR network, not a statement about the image.
-# The anonymous API allows 60 requests an hour per IP address, and a plan spends
-# one per pinned image, so a shared office address can reach 403 honestly.
-if [ "${http}" != "200" ]; then
-  printf '%s\n' "" >&2
-  printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof (HTTP ${http})." >&2
-  printf '%s\n' "" >&2
-  if [ "${http}" = "403" ] || [ "${http}" = "429" ]; then
-    printf '%s\n' "GitHub is rate-limiting this address. The anonymous limit is 60" >&2
-    printf '%s\n' "requests an hour per IP, and it is shared by everyone behind your" >&2
-    printf '%s\n' "network address. Wait, then run the same command again, or set" >&2
-    printf '%s\n' "FHENIX_PROVENANCE_TOKEN to any GitHub token to raise the limit." >&2
-  elif [ "${http}" = "000" ]; then
-    printf '%s\n' "api.github.com could not be reached at all. Check the network, a" >&2
-    printf '%s\n' "proxy, or a firewall rule. See PARTNER_GUIDE.md, step 1." >&2
-  else
-    printf '%s\n' "api.github.com answered with an error. Wait, then try again." >&2
+  # Fetched anonymously. This endpoint needs no GitHub account, which is what
+  # keeps the check independent of any credential we could hand you.
+  #
+  # Optional, and never required. It only raises the anonymous limit of 60 requests
+  # an hour per IP address, which a shared office network can exhaust.
+  #
+  # Deliberately NOT GITHUB_TOKEN or GH_TOKEN: those are commonly exported on a
+  # developer machine, and an expired one would turn a working check into a
+  # permanent 401 with advice that never helps.
+  auth=()
+  if [ -n "${FHENIX_PROVENANCE_TOKEN:-}" ]; then
+    auth=(-H "Authorization: Bearer ${FHENIX_PROVENANCE_TOKEN}")
   fi
-  printf '%s\n' "" >&2
-  printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
-  printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
-  exit 1
-fi
+  # ${auth[@]+...} because bash 3.2 errors on an empty array under `set -u`.
+  http="$(curl -sS -w '%{http_code}' -o "${response}" \
+    ${auth[@]+"${auth[@]}"} \
+    "https://api.github.com/repos/${REPO}/attestations/${DIGEST}" || true)"
 
-# EVERY bundle, as JSON Lines, not just the first. The API may return several
-# attestations for one digest, and gh picks the one that satisfies the flags.
-# Taking [0] blindly would turn "wrong element" into "the proof does not hold".
-jq -ce '.attestations[].bundle' < "${response}" > "${bundle}" \
-  || die "the attestation response was not in the expected form. Send this to Fhenix."
+  if [ "${http}" = "404" ]; then
+    printf '%s\n' "" >&2
+    printf '%s\n' "FAIL — no attestation is published for this digest." >&2
+    printf '%s\n' "DO NOT PIN THIS DIGEST." >&2
+    printf '%s\n' "" >&2
+    printf '%s\n' "This usually means one of:" >&2
+    printf '%s\n' "  - the digest was mistyped or truncated" >&2
+    printf '%s\n' "  - the image predates build provenance, or is a development build" >&2
+    printf '%s\n' "  - the image was not built by our public workflow" >&2
+    printf '%s\n' "" >&2
+    printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
+    exit 1
+  fi
+
+  # Anything else is OUR side or YOUR network, not a statement about the image.
+  # The anonymous API allows 60 requests an hour per IP address, and a plan spends
+  # one per pinned image, so a shared office address can reach 403 honestly.
+  if [ "${http}" != "200" ]; then
+    printf '%s\n' "" >&2
+    printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof (HTTP ${http})." >&2
+    printf '%s\n' "" >&2
+    if [ "${http}" = "403" ] || [ "${http}" = "429" ]; then
+      printf '%s\n' "GitHub is rate-limiting this address. The anonymous limit is 60" >&2
+      printf '%s\n' "requests an hour per IP, and it is shared by everyone behind your" >&2
+      printf '%s\n' "network address. Wait, then run the same command again, or set" >&2
+      printf '%s\n' "FHENIX_PROVENANCE_TOKEN to any GitHub token to raise the limit." >&2
+    elif [ "${http}" = "000" ]; then
+      printf '%s\n' "api.github.com could not be reached at all. Check the network, a" >&2
+      printf '%s\n' "proxy, or a firewall rule. See PARTNER_GUIDE.md, step 1." >&2
+    elif [ "${http}" = "401" ]; then
+      printf '%s\n' "api.github.com refused the credentials in FHENIX_PROVENANCE_TOKEN." >&2
+      printf '%s\n' "That token is optional. Unset it and run this again:" >&2
+      printf '%s\n' "  unset FHENIX_PROVENANCE_TOKEN" >&2
+    else
+      printf '%s\n' "api.github.com answered with an error. Wait, then try again." >&2
+    fi
+    printf '%s\n' "" >&2
+    printf '%s\n' "Nothing was written. Do not pin this digest until a check passes." >&2
+    printf '%s\n' "Send this output to Fhenix if it does not clear." >&2
+    exit 1
+  fi
+
+  # EVERY bundle, as JSON Lines, not just the first. The API may return several
+  # attestations for one digest, and gh picks the one that satisfies the flags.
+  # Taking [0] blindly would turn "wrong element" into "the proof does not hold".
+  jq -ce '.attestations[].bundle' < "${response}" > "${bundle}" \
+    || die "the attestation response was not in the expected form. Send this to Fhenix."
+}
+
+# The release tag ships the signed attestation for every digest it pins, so the
+# usual path reaches no GitHub API. The file name carries the digest. A file
+# from another release can thus never replace this one: either the exact file is
+# here, or we fetch.
+#
+# FHENIX_IGNORE_SHIPPED_BUNDLE makes this download instead. Set it to compare
+# what we gave you against what GitHub serves. We document it because the claim
+# "our copy is checked as hard as yours" is worth more if you can test it.
+shipped="${SCRIPT_DIR}/bundles/${IMAGE}-${DIGEST#sha256:}.jsonl"
+if [ -n "${FHENIX_IGNORE_SHIPPED_BUNDLE:-}" ]; then
+  BUNDLE_SOURCE=api
+  say "  proof   api.github.com (FHENIX_IGNORE_SHIPPED_BUNDLE is set)"
+  fetch_bundle_from_api
+elif [ -s "${shipped}" ]; then
+  BUNDLE_SOURCE=shipped
+  cp "${shipped}" "${bundle}"
+  say "  proof   bundles/${IMAGE}-${DIGEST#sha256:}.jsonl (shipped in this release)"
+elif [ -e "${shipped}" ]; then
+  # Present but empty. Saying "ships no bundle" here would be untrue, and it
+  # would send the partner to look for a network problem they do not have.
+  die "the file bundles/${IMAGE}-${DIGEST#sha256:}.jsonl is empty. It is damaged. Get the release tag again."
+else
+  BUNDLE_SOURCE=api
+  say "  proof   api.github.com (this release ships no file for this digest)"
+  fetch_bundle_from_api
+fi
+say ""
 
 # Every flag below is an assertion. gh exits non-zero if any one of them does
 # not match the certificate in the attestation.
@@ -215,6 +257,13 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
       --source-digest "${COMMIT}" 2>&1)"; then
   say "PASS — our workflow built this digest from commit ${COMMIT}."
   say "You may pin it."
+  # Fhenix release tooling only: release.yml proves each pin, then commits the
+  # attestation that passed. Partners never set this. The path is relative to the
+  # working directory of the caller, and release.yml runs from the repo root.
+  if [ -n "${FHENIX_BUNDLE_OUT:-}" ] && [ "${BUNDLE_SOURCE}" = api ]; then
+    mkdir -p "${FHENIX_BUNDLE_OUT}"
+    cp "${bundle}" "${FHENIX_BUNDLE_OUT}/${IMAGE}-${DIGEST#sha256:}.jsonl"
+  fi
   if [ "${TERRAFORM_MODE}" = true ]; then
     printf '{"verified":"true","image":"%s","digest":"%s","commit":"%s"}\n' \
       "${IMAGE}" "${DIGEST}" "${COMMIT}"
@@ -222,35 +271,58 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
   exit 0
 fi
 
-# gh does two more network operations: it fetches the image manifest from the
-# registry, and Sigstore's trust root. A failure in either says nothing about the
-# image, so it must not be reported as a failed proof. A genuine proof failure
-# names a certificate field instead, and matches none of these.
+# ONLY these mean the proof did not hold. An ALLOW-list on purpose: gh also
+# fetches the image manifest and two trust roots, and a deny-list of those
+# failures always has a hole. A hole tells a partner their image is bad when
+# their network is bad.
+#
+# So match only what gh's own checks produce. A general phrase such as "does not
+# match" also appears in a registry mismatch, an x509 error and a TUF rollover.
+#   expected SourceRepository...  the repository, the branch or the commit
+#   expected Issuer to be         the certificate came from another OIDC issuer
+#   verifying with issuer         gh's catch-all: signature, identity or subject
+#   bundle issuer                 the leaf certificate is not from a known CA
+#   no attestations               nothing in the bundle carries the right claim
+#
+# A later gh could reword one of these, and a real failure would then read as
+# "could not check". That direction is safe, because the exit code is 1 either
+# way. Do NOT answer a reworded string by adding a deny-list.
 if printf '%s' "${output}" | grep -qE \
-  'failed to fetch remote image|error getting credentials|denied access to the requested resource|MANIFEST_UNKNOWN|UNAUTHORIZED|DENIED|TUF|trusted root|connection refused|no such host|i/o timeout|context deadline exceeded|tls:'; then
+  'expected SourceRepository|expected Issuer to be|verifying with issuer|bundle issuer|no attestations'; then
   printf '%s\n' "" >&2
-  printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof." >&2
+  printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
   printf '%s\n' "" >&2
   printf '%s\n' "${output}" >&2
   printf '%s\n' "" >&2
-  printf '%s\n' "Something in the path could not be reached: the image registry, or" >&2
-  printf '%s\n' "Sigstore's trust root. Check the network, a proxy, or a firewall rule." >&2
-  printf '%s\n' "See PARTNER_GUIDE.md, step 1." >&2
+  printf '%s\n' "What this means, most likely first:" >&2
+  printf '%s\n' "  - the digest and the commit do not belong together" >&2
+  printf '%s\n' "  - one of the two values was mistyped or truncated" >&2
+  printf '%s\n' "  - the image was not built on main by our public workflow" >&2
+  if [ "${BUNDLE_SOURCE}" = shipped ]; then
+    printf '%s\n' "  - the file in bundles/ changed after this release was tagged" >&2
+  fi
   printf '%s\n' "" >&2
-  printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
-  printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
+  printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
   exit 1
 fi
 
 printf '%s\n' "" >&2
-printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
+printf '%s\n' "COULD NOT CHECK — the check did not finish." >&2
+printf '%s\n' "This is NOT a failed proof. It is also NOT a pass." >&2
 printf '%s\n' "" >&2
 printf '%s\n' "${output}" >&2
 printf '%s\n' "" >&2
-printf '%s\n' "What this means, most likely first:" >&2
-printf '%s\n' "  - the digest and the commit do not belong together" >&2
-printf '%s\n' "  - one of the two values was mistyped or truncated" >&2
-printf '%s\n' "  - the image was not built on main by our public workflow" >&2
+printf '%s\n' "The usual causes:" >&2
+printf '%s\n' "  - the image registry could not be reached" >&2
+printf '%s\n' "  - a public trust root could not be reached:" >&2
+printf '%s\n' "    tuf-repo-cdn.sigstore.dev or tuf-repo.github.com" >&2
+if [ "${BUNDLE_SOURCE}" = shipped ]; then
+  printf '%s\n' "  - the file in bundles/ is damaged. Get the tag again." >&2
+fi
 printf '%s\n' "" >&2
-printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
+printf '%s\n' "Check the network, a proxy, or a firewall rule. See PARTNER_GUIDE.md," >&2
+printf '%s\n' "step 1. Then run the same command again." >&2
+printf '%s\n' "" >&2
+printf '%s\n' "Nothing was written. Do not pin this digest until a check passes." >&2
+printf '%s\n' "Send this output to Fhenix if it does not clear." >&2
 exit 1

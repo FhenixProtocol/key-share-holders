@@ -48,6 +48,8 @@ The workflow then:
 - rejects a malformed tag, digest or commit, and a tag that exists
 - **proves each digest came from the commit beside it** — this catches a wrong commit
   here, once, instead of at every partner
+- commits each attestation in `partner/bundles`. A partner's apply then reads the proof
+  from the tag, and calls no GitHub API
 - renders `values.tfvars` and `EXPECTED.md`, with the diff against the previous tag
 - type-checks the rendered file against the real variables
 - writes the `CHANGELOG.md` entry
@@ -59,6 +61,9 @@ Read that table.
 ## 3. Review and merge
 
 Compare `values.tfvars` and `EXPECTED.md` against the build summaries. Then merge.
+
+Do not try to read the files in `partner/bundles`. They are machine-readable signatures.
+The step above proved them, and every partner apply proves them again.
 
 **Do not rename the pull request.** The tag job reads the tag out of its title.
 

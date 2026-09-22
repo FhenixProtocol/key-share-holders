@@ -22,8 +22,12 @@ if [[ -z "$prev_tag" || ! -s "$prev_file" ]]; then
   exit 0
 fi
 
-awk -f "$here/pins.awk" "$prev_file" > /tmp/pins.prev
-awk -f "$here/pins.awk" "$new_file"  > /tmp/pins.new
+# Own directory, not fixed /tmp names: two releases on one runner would
+# overwrite each other, and a pre-placed symlink at a fixed name is followed.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+awk -f "$here/pins.awk" "$prev_file" > "$work/pins.prev"
+awk -f "$here/pins.awk" "$new_file"  > "$work/pins.new"
 
 lookup() { awk -v k="$1" '$1 == k { print $2 }' "$2"; }
 
@@ -40,8 +44,8 @@ changed=""
 unchanged=""
 rows=""
 for key in compute keygen keygen-sha teecryptor teecryptor-sha zee-k zee-k-sha; do
-  old="$(lookup "$key" /tmp/pins.prev)"
-  new="$(lookup "$key" /tmp/pins.new)"
+  old="$(lookup "$key" "$work/pins.prev")"
+  new="$(lookup "$key" "$work/pins.new")"
   case "$key" in
     compute)        label="Fhenix compute project" ;;
     keygen)         label="keygen (write gate)" ;;

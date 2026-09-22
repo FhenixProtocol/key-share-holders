@@ -23,21 +23,53 @@ call with you.
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
 
 - `terraform` 1.9 or later, and `gcloud`.
-- `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses them to prove where each
-  image came from, before it pins anything. Install with `brew install gh jq`, or see
-  https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
-  flags this check needs were added; an older `gh` stops with a clear message.
+- `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
+  image came from, before it pins anything. `jq` and `curl` are only for the fallback,
+  which a normal apply does not use. Install with `brew install gh jq`, or see
+  https://github.com/cli/cli#installation. Check with `gh --version`. Version 2.68 added
+  the flags that this check needs. An older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
-- Network access from the machine that runs terraform to `api.github.com`,
-  `europe-west4-docker.pkg.dev` and `tuf-repo-cdn.sigstore.dev` (Sigstore's public trust
-  root). The proof is read from the public record, not from us.
+- Network access from the machine that runs terraform to these hosts:
 
-> **If the check reports `COULD NOT CHECK … HTTP 403`,** GitHub is rate-limiting your
-> address. The anonymous limit is 60 requests an hour per IP, shared by everyone behind
-> it. Wait and run it again, or pass any GitHub token to raise the limit:
+  | Host | What it gives | Used |
+  |---|---|---|
+  | `europe-west4-docker.pkg.dev` | the image, to confirm the digest resolves | always |
+  | `tuf-repo-cdn.sigstore.dev` | Sigstore's public trust root | always |
+  | `tuf-repo.github.com` | GitHub's public trust root | always |
+  | `api.github.com` | the attestation for a digest the tag does not carry | fallback |
+
+  The two trust roots are the public record, and we do not control them. Your check
+  tests our file against them.
+
+The release tag carries the signed attestation for every digest it pins, in
+`partner/bundles`. Your apply reads those files, so it calls no GitHub API. The one
+exception is a digest that the tag does not carry, which you only meet if you check an
+image by hand.
+
+We give you the file. This gives us no advantage. `gh` checks three things against the
+public trust roots above, which we do not control:
+
+- the signature in the file
+- the identity in the certificate
+- the digest that the file names
+
+A file that we changed fails the check.
+
+You can test that claim. Set `FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads
+the attestation from GitHub instead of reading our file:
+
+```bash
+FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
+```
+
+> **You can check a digest that the tag does not carry.** You examine an image by hand.
+> Then the script downloads the attestation from `api.github.com` instead.
+> A `COULD NOT CHECK … HTTP 403` then means GitHub limits requests from your address. The anonymous
+> limit is 60 requests an hour for each IP address. Everyone behind your address shares
+> that limit. Wait and run the command again, or pass any GitHub token to raise the limit:
 >
 > ```bash
-> FHENIX_PROVENANCE_TOKEN=<token> terraform apply …
+> FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
 > ```
 >
 > A token is never required. It only raises the limit, and it changes nothing about what
@@ -81,7 +113,10 @@ The two commands above check what you will apply. This one checks what we publis
 ### What the release carries
 
 Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
-plan and your `verify/` run must show. Read
+plan and your `verify/` run must show.
+
+The tag also carries `partner/bundles`: one signed attestation for each pinned digest.
+Your apply reads those files. You do not touch them. See `partner/bundles/README.md`. Read
 `partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
 partner side. There is no binary and no service in this design.
 
@@ -248,9 +283,16 @@ know it ran, and it names the commit proven for each image.
 > A later release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-If the plan stops with `External Program Execution Failed` on `verify-image.sh`, the
-proof did not hold and nothing was written. Change nothing. Do not edit a digest or a
-`source_sha` to make it pass. Send us the whole error.
+If the plan stops with `External Program Execution Failed` on `verify-image.sh`, read
+the last lines of the output. The script says which of two things happened:
+
+- **`FAIL`** — the proof does not hold. Change nothing. Do not edit a digest or a
+  `source_sha` to make it pass. Send us the whole error.
+- **`COULD NOT CHECK`** — the check did not finish. This says nothing about the image.
+  A host in the table in step 1 was not reachable, or a file in `partner/bundles` is
+  damaged. Correct that, then run the plan again.
+
+Nothing is written in either case.
 
 ## 6. Apply, then verify
 
@@ -460,7 +502,7 @@ the plan against the **CHANGED** rows in `EXPECTED.md`. A resource that no row e
 still a reason to stop and send us the plan.
 
 Your plan also proves each new digest against its commit before it pins anything. That
-needs `gh`, `jq` and `curl` on this machine, as in step 1. If we ever add a tool, the
+needs `gh` on this machine, as in step 1. If we ever add a tool, the
 release notes say so.
 
 Then run the `verify/` check from step 6 again, and send us the output.
@@ -479,12 +521,23 @@ Then run the `verify/` check from step 6 again, and send us the output.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
   the read set. The network continues while enough partners remain. Use it with care,
-  and tell us. A revoke skips the provenance check, so the brake works even when GitHub
-  is unreachable. From your clone, in `partner/`:
+  and tell us. From your clone, in `partner/`:
   ```bash
   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
     -var grant_read_access=false
   ```
+  The provenance check still runs on a revoke. If a host in the table in step 1 is
+  unreachable, add `skip_provenance_check`:
+  ```bash
+  terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+    -var grant_read_access=false -var skip_provenance_check=true
+  ```
+  Terraform refuses that flag on an apply that grants anything, so it can only ever
+  widen a revoke. Use it only when a check blocks an urgent revoke.
+
+  **That apply still writes the tag's digests into your gates, and it proves none of
+  them.** No binding accompanies them, so nothing can read your share. Re-apply without
+  the flag when the hosts are reachable again. That proves the digests.
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
   **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the

@@ -34,12 +34,20 @@ variable "image_digest" {
 variable "skip_provenance_check" {
   type    = bool
   default = false
-  # EMERGENCY USE ONLY, and only together with grant_read_access = false. The
-  # provenance check needs api.github.com, the image registry and Sigstore's
-  # trust root. If you must revoke while any of those is unreachable, this turns
-  # the check off for that apply. It is visible in your plan and it is never part
-  # of a normal apply. Never pass it to grant or to re-pin anything.
-  description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when GitHub is unreachable. Never use it on an apply that grants or re-pins."
+  # EMERGENCY USE ONLY, and only together with a revoke. The provenance check
+  # needs the image registry and two public trust roots. If you must revoke
+  # while any of those is unreachable, this turns the check off for that apply.
+  # It is visible in your plan and it is never part of a normal apply.
+  #
+  # This is the ONE bypass of the whole gate, so the validation below makes it
+  # unusable on an apply that grants anything. Prose alone did not stop somebody
+  # from being talked into passing it on a normal apply.
+  description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when a trust root or the registry is unreachable. It is refused on an apply that grants access."
+
+  validation {
+    condition     = !var.skip_provenance_check || (!var.grant_read_access && !var.grant_write_access)
+    error_message = "skip_provenance_check is only for a revoke. Pass it with grant_read_access = false and grant_write_access = false, or do not pass it."
+  }
 }
 
 variable "source_sha" {
