@@ -233,7 +233,9 @@ know it ran, and it names the commit proven for each image.
 > - the question *"Do you want to migrate all workspaces to gcs?"* (answer **no**;
 >   on a new setup this question must not appear).
 >
-> A **destroy** must not appear.
+> On this **first** apply a destroy must not appear: there is nothing yet to destroy.
+> A later release may legitimately destroy a read binding when an image rotates. See
+> *Apply a later release*.
 
 If the plan stops with `External Program Execution Failed` on `verify-image.sh`, the
 proof did not hold and nothing was written. Change nothing. Do not edit a digest or a
@@ -391,23 +393,23 @@ Onboarding happens once. After it, each Fhenix release is the same short loop. E
 you need is in the tag. There is no other document.
 
 **What a release looks like.** We build new images and publish a tag here. The tag carries
-a new `values.tfvars` and a new `EXPECTED.md`. Usually one or two digests change and the
-rest stay the same. `EXPECTED.md` names exactly what moved:
+a new `values.tfvars` and a new `EXPECTED.md`. Some releases move one image; some move all
+three. `EXPECTED.md` names exactly what moved. Here all three changed:
 
 ```
 ## What changes from v1.1.0
 
-Changed: teecryptor, teecryptor-sha
+Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
 
 | Pin | v1.1.0 | v1.2.0 | |
 |---|---|---|---|
 | Fhenix compute project | `fhenix-compute-project` | `fhenix-compute-project` | unchanged |
-| keygen (write gate) | `sha256:1111…` | `sha256:1111…` | unchanged |
-| keygen source commit | `84028ad…` | `84028ad…` | unchanged |
-| teecryptor (read gate on cofhe-tee-fhe-priv) | `sha256:2222…` | `sha256:9999…` | **CHANGED** |
+| keygen (write gate) | `sha256:1111…` | `sha256:aaaa…` | **CHANGED** |
+| keygen source commit | `84028ad…` | `b71f004…` | **CHANGED** |
+| teecryptor (read gate on cofhe-tee-fhe-priv) | `sha256:2222…` | `sha256:bbbb…` | **CHANGED** |
 | teecryptor source commit | `9d20cf4…` | `c17ba39…` | **CHANGED** |
-| zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:3333…` | unchanged |
-| zee-k source commit | `397eca5…` | `397eca5…` | unchanged |
+| zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:cccc…` | **CHANGED** |
+| zee-k source commit | `397eca5…` | `e4d8812…` | **CHANGED** |
 | write access | frozen | frozen | unchanged |
 ```
 
@@ -428,10 +430,22 @@ terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
 ```
 
-**What to expect.** Your plan changes only the rows `EXPECTED.md` marks **CHANGED**. For
-the example above that is the teecryptor reader provider and its secret binding. A
-`destroy` count above zero is not expected unless `EXPECTED.md` says a ceremony window is
-closing, which shows as exactly 2 destroys.
+**What to expect. A rotation destroys bindings, and that is normal.** Each consumer's
+read binding names its image digest inside the member string, and that string cannot be
+edited. So a new consumer digest replaces the binding: one destroy and one add. The gate
+itself is updated in place.
+
+Per changed pin:
+
+| What changed | What the plan shows |
+|---|---|
+| a consumer image (teecryptor, zee-k) | 1 change (its gate) + 1 destroy and 1 add (its read binding) |
+| the keygen image | 1 change (the write gate) |
+| a ceremony window closing | 2 destroys (the write bindings), nothing added |
+
+For the three-image example above, expect **2 to add, 3 to change, 2 to destroy**. Match
+the plan against the **CHANGED** rows in `EXPECTED.md`. A resource that no row explains is
+still a reason to stop and send us the plan.
 
 Your plan also proves each new digest against its commit before it pins anything. That
 needs `gh`, `jq` and `curl` on this machine, as in step 1. If we ever add a tool, the
