@@ -55,6 +55,13 @@ data "external" "provenance" {
     each.value.digest,
     each.value.commit,
   ]
+
+  lifecycle {
+    postcondition {
+      condition     = self.result.verified == "true"
+      error_message = "CHECK FAILED: the provenance check returned without proving ${each.key}. Do not change anything. Send this message to Fhenix."
+    }
+  }
 }
 
 output "provenance_verified" {

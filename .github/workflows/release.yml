@@ -91,6 +91,17 @@ jobs:
             exit 1
           fi
 
+      # The same check every partner's apply runs. A correctly shaped but wrong
+      # source_sha passes the regex above, ships in the tag, and then fails at
+      # EVERY partner with "DO NOT PIN THIS DIGEST" — one typo, N incidents.
+      # The runner has gh, jq, curl and a token, so there is no rate limit here.
+      - name: Prove each digest came from the commit beside it
+        run: |
+          set -euo pipefail
+          partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
+          partner/verify-image.sh teecryptor "$TEECRYPTOR_DIGEST" "$TEECRYPTOR_SHA"
+          partner/verify-image.sh zee-k      "$ZEEK_DIGEST"       "$ZEEK_SHA"
+
       - name: Render values.tfvars and EXPECTED.md
         run: |
           set -euo pipefail
@@ -158,6 +169,11 @@ jobs:
           terraform fmt -check -diff values.tfvars
           terraform -chdir=partner init -backend=false -input=false
           terraform -chdir=partner validate
+          # `validate` ignores var-files, so evaluate the rendered one against the
+          # real variable declarations. This catches a field renamed on one side
+          # of the boundary, and exercises every `validation` block.
+          echo 'var.attested_readers' \
+            | terraform -chdir=partner console -var-file=../values.tfvars -var partner_project_id=render-check
           # A real `plan` needs GCP credentials, which this repo deliberately has
           # none of. The var-file is proved against a live project by the partner,
           # and by the Fhenix re-apply of staging from the tag - not here.

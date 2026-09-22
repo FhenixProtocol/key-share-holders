@@ -116,7 +116,7 @@ done
 # --source-ref and --source-digest arrived in gh 2.68.0. An older gh exits with
 # "unknown flag", which this script would otherwise report as a failed proof.
 # Name the real problem instead.
-gh_version="$(gh --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+gh_version="$( { gh --version 2>/dev/null || true; } | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
 gh_major="${gh_version%%.*}"
 gh_rest="${gh_version#*.}"
 gh_minor="${gh_rest%%.*}"
@@ -153,9 +153,9 @@ export DOCKER_CONFIG="${workdir}/docker"
 http="$(curl -sS -w '%{http_code}' -o "${response}" \
   "https://api.github.com/repos/${REPO}/attestations/${DIGEST}" || true)"
 
-if [ "${http}" != "200" ]; then
+if [ "${http}" = "404" ]; then
   printf '%s\n' "" >&2
-  printf '%s\n' "FAIL — no attestation is published for this digest (HTTP ${http})." >&2
+  printf '%s\n' "FAIL — no attestation is published for this digest." >&2
   printf '%s\n' "DO NOT PIN THIS DIGEST." >&2
   printf '%s\n' "" >&2
   printf '%s\n' "This usually means one of:" >&2
@@ -167,10 +167,33 @@ if [ "${http}" != "200" ]; then
   exit 1
 fi
 
+# Anything else is OUR side or YOUR network, not a statement about the image.
+# The anonymous API allows 60 requests an hour per IP address, and a plan spends
+# one per pinned image, so a shared office address can reach 403 honestly.
+if [ "${http}" != "200" ]; then
+  printf '%s\n' "" >&2
+  printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof (HTTP ${http})." >&2
+  printf '%s\n' "" >&2
+  if [ "${http}" = "403" ] || [ "${http}" = "429" ]; then
+    printf '%s\n' "GitHub is rate-limiting this address. The anonymous limit is 60" >&2
+    printf '%s\n' "requests an hour per IP, and it is shared by everyone behind your" >&2
+    printf '%s\n' "network address. Wait, then run the same command again." >&2
+  elif [ "${http}" = "000" ]; then
+    printf '%s\n' "api.github.com could not be reached at all. Check the network, a" >&2
+    printf '%s\n' "proxy, or a firewall rule. See PARTNER_GUIDE.md, step 1." >&2
+  else
+    printf '%s\n' "api.github.com answered with an error. Wait, then try again." >&2
+  fi
+  printf '%s\n' "" >&2
+  printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
+  printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
+  exit 1
+fi
+
 # EVERY bundle, as JSON Lines, not just the first. The API may return several
 # attestations for one digest, and gh picks the one that satisfies the flags.
 # Taking [0] blindly would turn "wrong element" into "the proof does not hold".
-jq -ce '.attestations[].bundle' < "${response}" > "${bundle}" 2>/dev/null \
+jq -ce '.attestations[].bundle' < "${response}" > "${bundle}" \
   || die "the attestation response was not in the expected form. Send this to Fhenix."
 
 # Every flag below is an assertion. gh exits non-zero if any one of them does

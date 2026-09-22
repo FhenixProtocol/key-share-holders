@@ -71,6 +71,14 @@ variable "attested_readers" {
     condition     = !contains(keys(var.attested_readers), "keygen")
     error_message = "\"keygen\" is reserved: it names the write gate in the provenance check. Use a different consumer key."
   }
+
+  # The key is not a label. provenance.tf passes it to verify-image.sh as the
+  # image selector, so it must be one the script knows. A new consumer needs a
+  # new release of this repo, not just a new line in values.tfvars.
+  validation {
+    condition     = alltrue([for k in keys(var.attested_readers) : contains(["teecryptor", "zee-k"], k)])
+    error_message = "consumer keys must be \"teecryptor\" or \"zee-k\": the provenance check resolves each key to a known Fhenix image."
+  }
 }
 
 variable "grant_read_access" {
