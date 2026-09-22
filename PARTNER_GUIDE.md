@@ -1,8 +1,8 @@
 # Partner Dev — Initialization
 
-You put the configuration file that we send you into your clone of this repository. You apply. This creates two Secret Manager entries and the IAM rules that
-decide **which attested Fhenix enclave can write your key share, and which can read
-it**.
+You check out the release tag we send you. It already carries the configuration file.
+You apply. This creates two Secret Manager entries and the IAM rules that decide
+**which attested Fhenix enclave can write your key share, and which can read it**.
 
 **Time: 1 to 2 hours, one time.** After this, nothing runs on your side. We are on the
 call with you.
@@ -16,7 +16,7 @@ call with you.
 > your project. We check and we advise; you execute. This is by design. The Terraform
 > that sets the IAM on your secrets needs one permission
 > (`secretmanager.secrets.setIamPolicy`). The holder of that permission can give
-> read access on a share to itself. We do not take it. See step 3.
+> read access on a share to itself. We do not take it. See step 4.
 
 ## 1. Prerequisites
 
@@ -39,13 +39,10 @@ gcloud storage buckets create gs://<your-project>-tfstate \
   --project=<your-project> --uniform-bucket-level-access
 ```
 
-## 3. Give Fhenix read-only access
+## 3. Get the release
 
-With this access, we can check your configuration without a request to you. This
-applies to onboarding and to each release after it.
-
-First get the repository and check out the tag we sent you. Everything from here on
-runs from inside that clone.
+We send you one thing: a release tag in this repository. Get it, and confirm it is what
+we published. Everything from here on runs from inside this clone.
 
 ```bash
 git clone https://github.com/FhenixProtocol/key-share-holders
@@ -53,7 +50,108 @@ cd key-share-holders
 git fetch --tags && git checkout <tag>
 ```
 
-Then apply the read-only grant:
+Confirm you are on that tag, and that nothing is modified:
+
+```bash
+git describe --tags --exact-match   # expect: the tag we sent you
+git status --porcelain              # expect: no output
+```
+
+The GitHub Release page for the tag also carries the sha256 of its source tarball. You
+may compare it:
+
+```bash
+curl -sL https://github.com/FhenixProtocol/key-share-holders/archive/refs/tags/<tag>.tar.gz \
+  | shasum -a 256
+```
+
+The two commands above check what you will apply. This one checks what we published.
+
+### What the release carries
+
+Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
+plan and your `verify/` run must show. Read
+`partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
+partner side. There is no binary and no service in this design.
+
+`values.tfvars` at the root holds the shared values. You do not edit it. We generate it,
+so it looks exactly like this, comments and all:
+
+```hcl
+# Shared values for release v1.2.0. Rendered by .github/workflows/release.yml.
+# Do not edit by hand — the next release overwrites this file.
+#
+# Your own project is NOT here. Pass it on the command line:
+#   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+
+service_project_id = "fhenix-compute-project"
+
+# Only this exact keygen image may WRITE your share. source_sha is the commit it
+# was built from: your apply proves the pair against the public Sigstore log
+# before it pins anything. The commit never enters the CEL.
+image_digest = "sha256:1111…"
+source_sha   = "84028ad…"
+
+# Not a ceremony release: write access stays frozen (module default).
+
+# Only these exact consumer images may READ your share — each on ONE secret.
+attested_readers = {
+  teecryptor = {
+    gce_project_id = "fhenix-compute-project"
+    image_digest   = "sha256:2222…"
+    source_sha     = "9d20cf4…"
+    secret_id      = "cofhe-tee-fhe-priv"
+  }
+  zee-k = {
+    gce_project_id = "fhenix-compute-project"
+    image_digest   = "sha256:3333…"
+    source_sha     = "397eca5…"
+    secret_id      = "cofhe-tee-zk-signer"
+  }
+}
+```
+
+A **ceremony** release differs in one place. The comment above is replaced by:
+
+```hcl
+# Ceremony release: our enclave may add ONE version to each secret.
+# The next release drops this line; re-applying then removes the
+# write binding (the plan shows exactly 2 destroys).
+grant_write_access = true
+```
+
+### Where each image came from
+
+`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
+every digest against the public Sigstore log before anything is pinned. A digest that did
+not come from the commit beside it fails your plan, and nothing is written.
+
+To run the same check by hand:
+
+```bash
+cd partner           # from the repo root, where step 3 left you
+./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+# FAIL means: change nothing, send us the output.
+```
+
+`plan` runs the same check.
+
+Your own project id is **not** in that file, and is in no file. You pass it with
+`-var partner_project_id=<your-project>` on every command below.
+
+There is no other read path. Each read of your share goes through these gates. The
+module has no input that gives read access to a person or to a service account.
+
+> **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
+> attested workload in our project can then write to your secrets, and the provenance
+> check on that image is skipped too. Terraform rejects a
+> value that is not `sha256:` plus 64 lowercase hex characters. A cut-off paste fails
+> with an error. It does not weaken the gate.
+
+## 4. Give Fhenix read-only access
+
+With this access, we can check your configuration without a request to you. This
+applies to onboarding and to each release after it.
 
 ```bash
 cd access
@@ -79,19 +177,8 @@ This binds two **Google-predefined** roles to our operator group in your project
 documentation. Do not accept our description of them. Both roles apply to this project
 only. `-var grant_view_access=false` removes them at any time.
 
-> **Why we do not ask for more.** The Terraform in step 5 needs
-> `secretmanager.secrets.setIamPolicy`. It sets IAM on each secret; that is its job.
-> A holder of this permission can give read access on a secret to itself, then read it.
-> Two partner shares are sufficient to reconstruct the key.
->
-> So we do not hold this permission, at any time. **You run the applies.** We
-> considered a different option: hold the permission only during onboarding, while
-> your secrets are empty. We rejected it. A permission given outside Terraform in
-> that window remains after the window closes. It becomes active when your share is
-> written.
->
-> The ceremony does not need this permission. Our enclave identifies itself to your
-> CEL with hardware attestation, not with the credentials of a Fhenix employee.
+> **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
+> apply. See *Why we do not ask for more* under Reference.
 
 Check what we hold, at any time:
 
@@ -103,76 +190,10 @@ gcloud projects get-iam-policy <your-project> \
 #              roles/iam.workloadIdentityPoolViewer
 ```
 
-## 4. Check the release you got
-
-You cloned the repository and checked out the tag in step 3. Now confirm it is what we
-published. The GitHub Release for that tag carries the sha256
-of its source tarball; the two must match:
-
-```bash
-curl -sL https://github.com/FhenixProtocol/key-share-holders/archive/refs/tags/<tag>.tar.gz \
-  | shasum -a 256
-```
-
-Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
-plan and your `verify/` run must show. Read
-`partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
-partner side. There is no binary and no service in this design.
-
-`values.tfvars` at the root holds the shared values. You do not edit it. It has this
-form:
-
-```hcl
-service_project_id = "fhenix-compute-project"
-
-# Only this exact keygen image can WRITE your share. source_sha is the commit it
-# was built from.
-image_digest = "sha256:…"
-source_sha   = "…40 hex…"
-
-# Ceremony only. The module default is false (frozen). This line is in the
-# values.tfvars of a ceremony release. It is absent in the release after it.
-grant_write_access = true
-
-# Only these exact consumer images can READ your share. Each reads ONE secret.
-attested_readers = {
-  teecryptor = { gce_project_id = "…", image_digest = "sha256:…", source_sha = "…40 hex…", secret_id = "cofhe-tee-fhe-priv" }
-  zee-k      = { gce_project_id = "…", image_digest = "sha256:…", source_sha = "…40 hex…", secret_id = "cofhe-tee-zk-signer" }
-}
-```
-
-### Where each image came from
-
-`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
-every digest against the public Sigstore log before anything is pinned. A digest that did
-not come from the commit beside it fails your plan, and nothing is written.
-
-To run the same check by hand:
-
-```bash
-cd ../partner        # from access/, where step 3 left you
-./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
-# FAIL means: change nothing, send us the output.
-```
-
-`plan` runs the same check.
-
-Your own project id is **not** in that file, and is in no file. You pass it with
-`-var partner_project_id=<your-project>` on every command below.
-
-There is no other read path. Each read of your share goes through these gates. The
-module has no input that gives read access to a person or to a service account.
-
-> **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
-> attested workload in our project can then write to your secrets, and the provenance
-> check on that image is skipped too. Terraform rejects a
-> value that is not `sha256:` plus 64 lowercase hex characters. A cut-off paste fails
-> with an error. It does not weaken the gate.
-
 ## 5. Init and plan
 
 ```bash
-cd ../partner        # from access/, where step 3 left you
+cd ../partner        # from access/, where step 4 left you
 terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/partner" \
@@ -363,6 +384,62 @@ continues to work.
 
 ---
 
+## Apply a later release
+
+Onboarding happens once. After it, each Fhenix release is the same short loop. Everything
+you need is in the tag. There is no other document.
+
+**What a release looks like.** We build new images and publish a tag here. The tag carries
+a new `values.tfvars` and a new `EXPECTED.md`. Usually one or two digests change and the
+rest stay the same. `EXPECTED.md` names exactly what moved:
+
+```
+## What changes from v1.1.0
+
+Changed: teecryptor, teecryptor-sha
+
+| Pin | v1.1.0 | v1.2.0 | |
+|---|---|---|---|
+| Fhenix compute project | `fhenix-compute-project` | `fhenix-compute-project` | unchanged |
+| keygen (write gate) | `sha256:1111…` | `sha256:1111…` | unchanged |
+| keygen source commit | `84028ad…` | `84028ad…` | unchanged |
+| teecryptor (read gate on cofhe-tee-fhe-priv) | `sha256:2222…` | `sha256:9999…` | **CHANGED** |
+| teecryptor source commit | `9d20cf4…` | `c17ba39…` | **CHANGED** |
+| zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:3333…` | unchanged |
+| zee-k source commit | `397eca5…` | `397eca5…` | unchanged |
+| write access | frozen | frozen | unchanged |
+```
+
+**What you run.** Five minutes, from your existing clone:
+
+```bash
+git fetch --tags && git checkout <new-tag>
+git status --porcelain              # expect: no output
+
+cd partner
+# init again. A release may add a provider, and plan fails until you do.
+# It is safe to run at any time and changes no infrastructure.
+terraform init -reconfigure -input=false \
+  -backend-config="bucket=<your-project>-tfstate" \
+  -backend-config="prefix=cofhe-tdx-keygen/partner"
+
+terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project>
+terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+```
+
+**What to expect.** Your plan changes only the rows `EXPECTED.md` marks **CHANGED**. For
+the example above that is the teecryptor reader provider and its secret binding. A
+`destroy` count above zero is not expected unless `EXPECTED.md` says a ceremony window is
+closing, which shows as exactly 2 destroys.
+
+Your plan also proves each new digest against its commit before it pins anything. That
+needs `gh`, `jq` and `curl` on this machine, as in step 1. If we ever add a tool, the
+release notes say so.
+
+Then run the `verify/` check from step 6 again, and send us the output.
+
+---
+
 ## Things you must never do
 
 - **Never** make an `image_digest` empty. This removes the pin from the gate.
@@ -375,7 +452,8 @@ continues to work.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
   the read set. The network continues while enough partners remain. Use it with
-  care, and tell us.
+  care, and tell us. A revoke skips the provenance check, so the brake works even when
+  GitHub is unreachable.
 
 ## Ongoing commitment
 
@@ -383,7 +461,7 @@ continues to work.
 |---|---|---|
 | Onboarding | This page, one time | 1 to 2 hours |
 | Directly after the ceremony | Freeze write access again (step 11) | 5 minutes |
-| Each Fhenix release | Put the new tfvars in place and apply. See *Partner Dev — Image Upgrade*. | 5 minutes |
+| Each Fhenix release | Check out the new tag and apply. See *Apply a later release* below. | 5 minutes |
 | Always | Keep the project and Secret Manager available. Google manages both. No on-call. | — |
 
 ## Reference
@@ -405,6 +483,20 @@ does not route around it.
 
 It does not say the commit is one you approve of. You choose which of our commits you
 trust, from our public history.
+
+### Why we do not ask for more
+
+The Terraform in step 5 needs `secretmanager.secrets.setIamPolicy`. It sets IAM on each
+secret; that is its job. A holder of this permission can give read access on a secret to
+itself, then read it. Two partner shares are sufficient to reconstruct the key.
+
+So we do not hold this permission, at any time. **You run the applies.** We considered a
+different option: hold the permission only during onboarding, while your secrets are
+empty. We rejected it. A permission given outside Terraform in that window remains after
+the window closes. It becomes active when your share is written.
+
+The ceremony does not need this permission. Our enclave identifies itself to your CEL
+with hardware attestation, not with the credentials of a Fhenix employee.
 
 ### What `verify/` checks
 

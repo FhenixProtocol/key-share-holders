@@ -44,7 +44,7 @@ PARTNER_GUIDE.md   the onboarding guide. Start here.
 CHANGELOG.md       one entry per tag: what changed, which digests
 values.tfvars      the shared values of the current release (added at the first real release)
 EXPECTED.md        what your plan and verify must show for those values
-access/            step 3 — gives Fhenix READ-ONLY visibility in your project
+access/            step 4 — gives Fhenix READ-ONLY visibility in your project
 partner/           steps 4 to 6 — your two secrets and the attestation gates on them
   verify-image.sh  proves a digest came from the commit beside it, before it is pinned
                    (SLSA build provenance; needs gh, jq and curl, no GitHub account)
@@ -83,7 +83,7 @@ and then rejected it.
 # one time: state bucket in your project
 gcloud storage buckets create gs://<your-project>-tfstate --uniform-bucket-level-access
 
-# step 3: get the release, then grant read-only access
+# steps 3 and 4: get the release, then grant read-only access
 git clone https://github.com/FhenixProtocol/key-share-holders
 cd key-share-holders && git fetch --tags && git checkout <tag>
 

@@ -24,9 +24,8 @@ locals {
   # verify-image.sh: keygen, teecryptor, zee-k.
   #
   # An empty image_digest means the keygen write gate is unpinned (early dev),
-  # so there is no digest to prove and the check is skipped. Every attested
-  # reader is always pinned, so every reader is always checked.
-  pinned_images = merge(
+  # so there is no digest to prove and that check is skipped.
+  all_pinned_images = merge(
     var.image_digest == "" ? {} : {
       keygen = {
         digest = var.image_digest
@@ -40,6 +39,13 @@ locals {
       }
     },
   )
+
+  # The check exists to stop you TRUSTING a digest you have not proven. Setting
+  # grant_read_access = false is the emergency brake: it removes your share from
+  # the read set and trusts nothing new. That path must work when GitHub is
+  # unreachable, or the brake fails exactly when you need it. So a revoke skips
+  # the check. Every apply that grants or keeps access still runs it.
+  pinned_images = var.grant_read_access ? local.all_pinned_images : {}
 }
 
 data "external" "provenance" {

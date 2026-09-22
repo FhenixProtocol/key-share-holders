@@ -21,14 +21,6 @@
 # You choose which commits you trust, from our public history. This tool only
 # ties a digest to a commit.
 #
-# WHOM YOU TRUST. The public record, not Fhenix. The attestation is fetched from
-# an API that needs no account, and verified against Sigstore's public trust
-# root. No Fhenix credential and no GitHub login are involved. Run it anywhere.
-#
-# WHY THIS EXISTS. Your CEL pins the image digest. The attestation token carries
-# no repository, workflow or commit claim, so the CEL cannot say where an image
-# came from — only which one runs. This check fills that gap, at pin time.
-#
 # The values below are FIXED. They change only if we move a repository or rename
 # a workflow, and then you get a new release of this repo. Per release you
 # receive two values per image: the digest and the commit.
