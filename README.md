@@ -9,6 +9,9 @@ complete partner side.
 
 Read `PARTNER_GUIDE.md` first. The step numbers below refer to that guide.
 
+`RELEASING.md` is for Fhenix, not for you. It records how we cut a release, so you can
+see how the files you apply are produced.
+
 ## How a release works
 
 A release is a **tag**. Each tag carries one `values.tfvars` at the repository root. It holds the shared
