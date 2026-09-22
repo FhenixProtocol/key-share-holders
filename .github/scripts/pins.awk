@@ -19,11 +19,14 @@
     print consumer " " substr($0, RSTART, RLENGTH)
   }
 }
-# source_sha sits below image_digest in the same block, so `consumer` is still
-# set. Clear it here, at the end of the pair, not at the digest.
 /^[[:space:]]+source_sha/ {
   if (consumer != "" && match($0, /[0-9a-f]{40}/)) {
     print consumer "-sha " substr($0, RSTART, RLENGTH)
-    consumer = ""
   }
+}
+# Clear at the end of the BLOCK, never on one of its fields. Clearing on a field
+# makes the output depend on field order, and a reordered block would then print
+# nothing for the missed pin — which render-diff.sh reports as "unchanged".
+/^[[:space:]]+\}/ {
+  consumer = ""
 }

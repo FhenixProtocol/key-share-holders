@@ -33,6 +33,14 @@ variable "source_sha" {
     condition     = var.source_sha == "" || can(regex("^[0-9a-f]{40}$", var.source_sha))
     error_message = "source_sha must be empty, or a full 40-character lowercase hex commit SHA. The short form is not enough."
   }
+
+  # A pinned digest with no commit would reach verify-image.sh as an empty
+  # string and fail there, as an opaque "external program exited with 1".
+  # Name the real problem here instead.
+  validation {
+    condition     = var.image_digest == "" || var.source_sha != ""
+    error_message = "image_digest is pinned, so source_sha must name the commit it was built from. The provenance gate cannot run without it."
+  }
 }
 
 variable "grant_write_access" {
@@ -54,6 +62,14 @@ variable "attested_readers" {
   validation {
     condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[0-9a-f]{40}$", r.source_sha))])
     error_message = "every attested reader must name the full 40-character lowercase hex commit its image was built from. The short form is not enough."
+  }
+
+  # provenance.tf merges the keygen write gate and these readers into one map of
+  # checks. A reader keyed "keygen" would win that merge and silently replace the
+  # write gate's check, so the keygen digest would never be proven.
+  validation {
+    condition     = !contains(keys(var.attested_readers), "keygen")
+    error_message = "\"keygen\" is reserved: it names the write gate in the provenance check. Use a different consumer key."
   }
 }
 

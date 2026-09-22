@@ -23,12 +23,14 @@ call with you.
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
 
 - `terraform` 1.9 or later, and `gcloud`.
-- `cosign` 2.0 or later. Your apply uses it to prove where each image came from,
-  before it pins anything. Install it with `brew install cosign`, or take a release
-  from https://github.com/sigstore/cosign/releases. Check it with `cosign version`.
-- Network access from the machine that runs terraform to `fulcio.sigstore.dev`,
-  `rekor.sigstore.dev` and `europe-west4-docker.pkg.dev`. The proof is read from the
-  public log, not from us.
+- `gh` 2.60 or later, plus `jq` and `curl`. Your apply uses them to prove where each
+  image came from, before it pins anything. Install with `brew install gh jq`, or see
+  https://github.com/cli/cli#installation. Check with `gh --version`.
+  **You do not need a GitHub account and you do not need to run `gh auth login`.**
+  The check reads a public API and verifies offline.
+- Network access from the machine that runs terraform to `api.github.com`,
+  `europe-west4-docker.pkg.dev` and Sigstore's public trust root. The proof is read
+  from the public record, not from us.
 
 ## 2. Create your Terraform state bucket
 
@@ -152,6 +154,9 @@ cd partner
 ./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
 # FAIL means: change nothing, send us the output.
 ```
+
+The same check runs inside your `plan` and `apply`, so this is only for when you want
+to see it on its own.
 
 Your own project id is **not** in that file, and is in no file. You pass it with
 `-var partner_project_id=<your-project>` on every command below.
@@ -306,6 +311,13 @@ that line. You check it out and apply. This removes the write binding.
 git fetch --tags && git checkout <post-ceremony-tag>
 grep grant_write_access ../values.tfvars   # expect: no match
 
+# 1b. re-run init. Releases from 2026-09 on use one more provider for the
+#     provenance check, and plan fails with "Missing required provider" without
+#     this. It is safe to run at any time and changes no infrastructure.
+terraform init -reconfigure -input=false \
+  -backend-config="bucket=<your-project>-tfstate" \
+  -backend-config="prefix=cofhe-tdx-keygen/partner"
+
 # 2. plan — expect EXACTLY 2 destroys, nothing else
 terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 #   Plan: 0 to add, 0 to change, 2 to destroy.
@@ -373,16 +385,17 @@ it instead, one step earlier.
 
 It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
 
-- The signature on that exact digest is in the public Sigstore log.
+- A SLSA build provenance attestation exists for that exact digest.
 - Our workflow file produced it, on `refs/heads/main`, in our repository.
 - It was built from the exact commit in `source_sha`.
 
 A failure stops the run before any IAM changes. The check is a data source, so `-target`
 does not route around it.
 
-You trust the public log, not Fhenix: the check needs no Fhenix credential and no GitHub
-account. It does not say the commit is one you approve of — you choose which of our
-commits you trust, from our public history.
+You trust the public record, not Fhenix. The attestation is fetched from an API that
+needs no account and verified against Sigstore's public trust root, so no Fhenix
+credential and no GitHub login are involved. It does not say the commit is one you
+approve of — you choose which of our commits you trust, from our public history.
 
 ### What `verify/` checks
 
