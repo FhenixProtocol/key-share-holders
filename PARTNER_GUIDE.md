@@ -360,6 +360,8 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 **Nothing to run.** Be available. If your project rejects the write, the ceremony
 stops. This is by design. We may then ask you for your CEL string or your audit log.
 
+If you must use the emergency brake now, call us first. It stops the ceremony.
+
 ## 10. After the ceremony
 
 **Nothing to do.** We see the result on our side. The run is all-or-nothing: it reports
@@ -534,9 +536,6 @@ Then run the `verify/` check from step 6 again, and send us the output.
   ```
   Use this flag only when a check blocks an urgent revoke. Terraform refuses it on any
   apply that grants read or write access.
-
-  **During a ceremony, call us before you use it.** That release grants write access, so
-  the bypass needs `-var grant_write_access=false` as well. That stops the ceremony.
 
   **That apply still writes the tag's digests into your gates, and it proves none of
   them.** No binding accompanies them, so nothing can read your share. Re-apply without
