@@ -14,7 +14,7 @@
 # The release tag carries the signed attestation for every digest below, in
 # ./bundles. This check thus calls no GitHub API. It needs `gh`, `jq` and `curl`
 # on the machine that runs terraform. It also needs network access to the image
-# registry and to the two public trust roots. No GitHub account is required.
+# registry and to the two public trust roots. You do not need a GitHub account.
 # See PARTNER_GUIDE.md step 1.
 #
 # NOTE: the commit stops here. It is proof material only. The CEL pins the

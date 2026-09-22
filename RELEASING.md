@@ -62,8 +62,8 @@ Read that table.
 
 Compare `values.tfvars` and `EXPECTED.md` against the build summaries. Then merge.
 
-Do not try to read the files in `partner/bundles`. They are signed data, not text. The
-step above proved them, and every partner apply proves them again.
+Do not try to read the files in `partner/bundles`. They are machine-readable signatures.
+The step above proved them, and every partner apply proves them again.
 
 **Do not rename the pull request.** The tag job reads the tag out of its title.
 

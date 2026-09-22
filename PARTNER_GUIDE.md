@@ -24,8 +24,8 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
 
 - `terraform` 1.9 or later, and `gcloud`.
 - `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
-  image came from, before it pins anything. `jq` and `curl` are for the fallback in the
-  note below, which a normal apply does not use. Install with `brew install gh jq`, or see
+  image came from, before it pins anything. `jq` and `curl` are only for the fallback.
+  The note below describes it. A normal apply does not use it. Install with `brew install gh jq`, or see
   https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
   flags this check needs were added; an older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
@@ -42,13 +42,17 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
 The release tag carries the signed attestation for every digest it pins, in
 `partner/bundles`. Your apply reads those files. It calls no GitHub API.
 
-We give you the file. This gives us no advantage. `gh` checks the signature in the file,
-and the identity in the certificate, and the digest that the file names. It does all
-three against the public trust roots above, which we do not control. A file that we
-changed fails the check.
+We give you the file. This gives us no advantage. `gh` checks three things against the
+public trust roots above, which we do not control:
 
-> **You can check a digest that the tag does not carry.** You do this when you examine an
-> image by hand. Then the script downloads the attestation from `api.github.com` instead.
+- the signature in the file
+- the identity in the certificate
+- the digest that the file names
+
+A file that we changed fails the check.
+
+> **You can check a digest that the tag does not carry.** You examine an image by hand.
+> Then the script downloads the attestation from `api.github.com` instead.
 > A `COULD NOT CHECK … HTTP 403` then means GitHub is rate-limiting your address. The anonymous
 > limit is 60 requests an hour per IP, shared by everyone behind it. Wait and run it
 > again, or pass any GitHub token to raise the limit:

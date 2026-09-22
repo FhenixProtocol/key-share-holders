@@ -263,17 +263,26 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
   exit 0
 fi
 
-# ONLY these mean the proof itself did not hold. gh prints one of them when a
-# field in the certificate does not match what we assert, or when the bundle
-# does not verify against the image at all.
+# ONLY these mean the proof itself did not hold. Each one is a string that gh
+# prints when a field in the certificate disagrees with what we assert, or when
+# the bundle does not verify against the image at all.
 #
 # The list is an ALLOW-list on purpose. gh also fetches the image manifest and
 # two public trust roots, and any of that can fail for reasons that say nothing
 # about the image. A deny-list of those failures always has a hole, and a hole
 # tells a partner their image is bad when their network is bad. This way an
 # unknown error reads as "could not check", which is what it is.
+#
+# Match a string that only gh's own checks produce. A general phrase such as
+# "does not match" also appears in a registry digest mismatch, in an x509 error
+# and in a TUF rollover, so it would put the hole straight back.
+#   expected SourceRepository...  the repository, the branch or the commit
+#   expected Issuer to be         the certificate came from another OIDC issuer
+#   verifying with issuer         gh's catch-all: signature, identity or subject
+#   bundle issuer                 the leaf certificate is not from a known CA
+#   no attestations               nothing in the bundle carries the right claim
 if printf '%s' "${output}" | grep -qE \
-  'expected SourceRepository|verifying with issuer|no attestations|does not match'; then
+  'expected SourceRepository|expected Issuer to be|verifying with issuer|bundle issuer|no attestations'; then
   printf '%s\n' "" >&2
   printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
   printf '%s\n' "" >&2
@@ -301,7 +310,9 @@ printf '%s\n' "The usual causes:" >&2
 printf '%s\n' "  - the image registry could not be reached" >&2
 printf '%s\n' "  - a public trust root could not be reached:" >&2
 printf '%s\n' "    tuf-repo-cdn.sigstore.dev or tuf-repo.github.com" >&2
-printf '%s\n' "  - a file in bundles/ is damaged. Get the tag again." >&2
+if [ "${BUNDLE_SOURCE}" = shipped ]; then
+  printf '%s\n' "  - the file in bundles/ is damaged. Get the tag again." >&2
+fi
 printf '%s\n' "" >&2
 printf '%s\n' "Check the network, a proxy, or a firewall rule. See PARTNER_GUIDE.md," >&2
 printf '%s\n' "step 1. Then run the same command again." >&2
