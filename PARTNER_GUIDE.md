@@ -28,16 +28,30 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
   flags this check needs were added; an older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
-- Network access from the machine that runs terraform to `api.github.com`,
-  `europe-west4-docker.pkg.dev` and `tuf-repo-cdn.sigstore.dev` (Sigstore's public trust
-  root). The proof is read from the public record, not from us.
+- Network access from the machine that runs terraform to three hosts:
 
-> **If the check reports `COULD NOT CHECK … HTTP 403`,** GitHub is rate-limiting your
-> address. The anonymous limit is 60 requests an hour per IP, shared by everyone behind
-> it. Wait and run it again, or pass any GitHub token to raise the limit:
+  | Host | What it gives |
+  |---|---|
+  | `europe-west4-docker.pkg.dev` | the image, to confirm the digest resolves |
+  | `tuf-repo-cdn.sigstore.dev` | Sigstore's public trust root |
+  | `tuf-repo.github.com` | GitHub's public trust root |
+
+  The proof is read from the public record, not from us.
+
+The release tag carries the signed attestation for every digest it pins, in
+`partner/bundles`. Your apply reads those files, so it calls no GitHub API. That we hand
+you the file grants us nothing: `gh` checks its signature, the identity in its
+certificate and the digest it names against the public trust roots above. A file we
+changed fails.
+
+> **If you pin a digest the tag does not carry** — you are checking an image by hand —
+> the script downloads the attestation from `api.github.com` instead. Then a
+> `COULD NOT CHECK … HTTP 403` means GitHub is rate-limiting your address. The anonymous
+> limit is 60 requests an hour per IP, shared by everyone behind it. Wait and run it
+> again, or pass any GitHub token to raise the limit:
 >
 > ```bash
-> FHENIX_PROVENANCE_TOKEN=<token> terraform apply …
+> FHENIX_PROVENANCE_TOKEN=<token> ./verify-image.sh …
 > ```
 >
 > A token is never required. It only raises the limit, and it changes nothing about what

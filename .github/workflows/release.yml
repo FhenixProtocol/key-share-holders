@@ -183,14 +183,42 @@ jobs:
       # The runner has gh, jq and curl. FHENIX_PROVENANCE_TOKEN lifts the anonymous
       # 60/hour limit, which GitHub-hosted runners share by IP. The script uses
       # that name, not GITHUB_TOKEN, so a partner's ambient token never applies.
-      - name: Prove each digest came from the commit beside it
+      # FHENIX_BUNDLE_OUT makes the script keep each bundle it proved, and the tag
+      # then carries them. A partner's apply reads those files instead of calling
+      # api.github.com, so the gate needs no GitHub endpoint at plan time.
+      #
+      # Shipping the bundle weakens nothing: gh checks its signature, the
+      # certificate identity and the subject digest against Sigstore's public
+      # trust root, exactly as it does for one it downloads.
+      #
+      # A pin that carried forward already has its bundle in the checkout, so the
+      # script uses that copy and writes nothing. The file name carries the
+      # digest, so nothing is ever overwritten in place.
+      - name: Prove each digest came from the commit beside it, and keep the proof
         env:
           FHENIX_PROVENANCE_TOKEN: ${{ github.token }}
+          FHENIX_BUNDLE_OUT: partner/bundles
         run: |
           set -euo pipefail
           partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
           partner/verify-image.sh teecryptor "$TEECRYPTOR_DIGEST" "$TEECRYPTOR_SHA"
           partner/verify-image.sh zee-k      "$ZEEK_DIGEST"       "$ZEEK_SHA"
+
+          # Drop the bundles of digests this release no longer pins. Without this
+          # the directory keeps every digest we ever shipped.
+          keep=""
+          for d in "$KEYGEN_DIGEST" "$TEECRYPTOR_DIGEST" "$ZEEK_DIGEST"; do
+            keep="$keep ${d#sha256:}"
+          done
+          for f in partner/bundles/*.jsonl; do
+            [[ -e "$f" ]] || continue
+            hex="${f##*-}"
+            case " $keep " in
+              *" ${hex%.jsonl} "*) ;;
+              *) echo "dropping stale bundle $f"; rm -f "$f" ;;
+            esac
+          done
+          ls -l partner/bundles
 
       - name: Render values.tfvars and EXPECTED.md
         run: |
@@ -322,6 +350,7 @@ jobs:
           branch="release/$TAG"
           git checkout -b "$branch"
           git add -f values.tfvars EXPECTED.md CHANGELOG.md
+          git add -A partner/bundles
           git commit -m "release $TAG"
           git push -u origin "$branch"
           gh pr create --title "release $TAG" --base main --head "$branch" --body-file body.md

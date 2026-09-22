@@ -48,6 +48,8 @@ The workflow then:
 - rejects a malformed tag, digest or commit, and a tag that exists
 - **proves each digest came from the commit beside it** — this catches a wrong commit
   here, once, instead of at every partner
+- commits the attestation that passed, in `partner/bundles`, so a partner's apply reads
+  the proof out of the tag and calls no GitHub API
 - renders `values.tfvars` and `EXPECTED.md`, with the diff against the previous tag
 - type-checks the rendered file against the real variables
 - writes the `CHANGELOG.md` entry
