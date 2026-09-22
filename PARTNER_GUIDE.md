@@ -360,6 +360,8 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 **Nothing to run.** Be available. If your project rejects the write, the ceremony
 stops. This is by design. We may then ask you for your CEL string or your audit log.
 
+If you must use the emergency brake now, call us first. It stops the ceremony.
+
 ## 10. After the ceremony
 
 **Nothing to do.** We see the result on our side. The run is all-or-nothing: it reports
@@ -532,12 +534,13 @@ Then run the `verify/` check from step 6 again, and send us the output.
   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
     -var grant_read_access=false -var skip_provenance_check=true
   ```
-  Terraform refuses that flag on an apply that grants anything, so it can only ever
-  widen a revoke. Use it only when a check blocks an urgent revoke.
+  Use this flag only when a check blocks an urgent revoke. Terraform refuses it on any
+  apply that grants read or write access.
 
   **That apply still writes the tag's digests into your gates, and it proves none of
   them.** No binding accompanies them, so nothing can read your share. Re-apply without
   the flag when the hosts are reachable again. That proves the digests.
+
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
   **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the
@@ -564,7 +567,8 @@ it instead, one step earlier.
 It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
 
 - A SLSA build provenance attestation exists for that exact digest.
-- Our workflow file produced it, on `refs/heads/main`, in our repository.
+- That exact workflow file produced it, on `refs/heads/main`, in our repository. The
+  check matches the whole identity, so another workflow in the same repository fails.
 - It was built from the exact commit in `source_sha`.
 
 A failure stops the run before any IAM changes. The check is a data source, so `-target`
