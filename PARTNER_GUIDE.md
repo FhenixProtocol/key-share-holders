@@ -24,21 +24,22 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
 
 - `terraform` 1.9 or later, and `gcloud`.
 - `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
-  image came from, before it pins anything. `jq` and `curl` are only for the fallback.
-  The note below describes it. A normal apply does not use it. Install with `brew install gh jq`, or see
+  image came from, before it pins anything. `jq` and `curl` are only for the fallback,
+  which a normal apply does not use. Install with `brew install gh jq`, or see
   https://github.com/cli/cli#installation. Check with `gh --version`. Version 2.68 added
   the flags that this check needs. An older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
-- Network access from the machine that runs terraform to three hosts:
+- Network access from the machine that runs terraform to these hosts:
 
-  | Host | What it gives |
-  |---|---|
-  | `europe-west4-docker.pkg.dev` | the image, to confirm the digest resolves |
-  | `tuf-repo-cdn.sigstore.dev` | Sigstore's public trust root |
-  | `tuf-repo.github.com` | GitHub's public trust root |
-  | `api.github.com` | **fallback only**, see the note below |
+  | Host | What it gives | Used |
+  |---|---|---|
+  | `europe-west4-docker.pkg.dev` | the image, to confirm the digest resolves | always |
+  | `tuf-repo-cdn.sigstore.dev` | Sigstore's public trust root | always |
+  | `tuf-repo.github.com` | GitHub's public trust root | always |
+  | `api.github.com` | the attestation for a digest the tag does not carry | fallback |
 
-  The proof is read from the public record, not from us.
+  The two trust roots are the public record, and we do not control them. Your check
+  tests our file against them.
 
 The release tag carries the signed attestation for every digest it pins, in
 `partner/bundles`. Your apply reads those files. It calls no GitHub API.
