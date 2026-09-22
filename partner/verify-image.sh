@@ -26,12 +26,16 @@
 # receive two values per image: the digest and the commit.
 #
 # WHERE THE PROOF COMES FROM. The release tag carries the signed attestation for
-# each digest it pins, in ./bundles. This script uses that copy, so a normal
-# apply does not call api.github.com at all. Shipping the bundle grants us
-# nothing: `gh` checks its signature, the certificate identity and the subject
-# digest against Sigstore's PUBLIC trust root, so our copy is checked exactly as
-# hard as one you download. If no shipped bundle matches the digest you asked
-# about, the script falls back to the public GitHub API.
+# each digest it pins, in ./bundles. This script uses that copy. A normal apply
+# thus calls no GitHub API.
+#
+# We give you the file. This gives us no advantage. `gh` checks the signature in
+# the file. It checks the identity in the certificate. It checks the digest that
+# the file names. It does all three against the PUBLIC trust roots, which we do
+# not control. A file that we changed fails the check.
+#
+# If ./bundles holds no file for the digest that you ask about, this script uses
+# the public GitHub API instead.
 
 set -euo pipefail
 
@@ -204,8 +208,8 @@ fetch_bundle_from_api() {
       printf '%s\n' "api.github.com answered with an error. Wait, then try again." >&2
     fi
     printf '%s\n' "" >&2
-    printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
-    printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
+    printf '%s\n' "Nothing was written. Do not pin this digest until a check passes." >&2
+    printf '%s\n' "Send this output to Fhenix if it does not clear." >&2
     exit 1
   fi
 
@@ -246,7 +250,8 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
   say "PASS — our workflow built this digest from commit ${COMMIT}."
   say "You may pin it."
   # Fhenix release tooling only: release.yml proves each pin, then commits the
-  # very bundle that passed. Partners never set this.
+  # attestation that passed. Partners never set this. The path is relative to the
+  # working directory of the caller, and release.yml runs from the repo root.
   if [ -n "${FHENIX_BUNDLE_OUT:-}" ] && [ "${BUNDLE_SOURCE}" = api ]; then
     mkdir -p "${FHENIX_BUNDLE_OUT}"
     cp "${bundle}" "${FHENIX_BUNDLE_OUT}/${IMAGE}-${DIGEST#sha256:}.jsonl"
@@ -258,38 +263,49 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
   exit 0
 fi
 
-# gh does two more network operations: it fetches the image manifest from the
-# registry, and Sigstore's trust root. A failure in either says nothing about the
-# image, so it must not be reported as a failed proof. A genuine proof failure
-# names a certificate field instead, and matches none of these.
+# ONLY these mean the proof itself did not hold. gh prints one of them when a
+# field in the certificate does not match what we assert, or when the bundle
+# does not verify against the image at all.
+#
+# The list is an ALLOW-list on purpose. gh also fetches the image manifest and
+# two public trust roots, and any of that can fail for reasons that say nothing
+# about the image. A deny-list of those failures always has a hole, and a hole
+# tells a partner their image is bad when their network is bad. This way an
+# unknown error reads as "could not check", which is what it is.
 if printf '%s' "${output}" | grep -qE \
-  'failed to fetch remote image|error getting credentials|denied access to the requested resource|MANIFEST_UNKNOWN|UNAUTHORIZED|DENIED|TUF|trusted root|connection refused|no such host|i/o timeout|context deadline exceeded|tls:'; then
+  'expected SourceRepository|verifying with issuer|no attestations|does not match'; then
   printf '%s\n' "" >&2
-  printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof." >&2
+  printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
   printf '%s\n' "" >&2
   printf '%s\n' "${output}" >&2
   printf '%s\n' "" >&2
-  printf '%s\n' "Something in the path could not be reached: the image registry, or" >&2
-  printf '%s\n' "Sigstore's trust root. Check the network, a proxy, or a firewall rule." >&2
-  printf '%s\n' "See PARTNER_GUIDE.md, step 1." >&2
+  printf '%s\n' "What this means, most likely first:" >&2
+  printf '%s\n' "  - the digest and the commit do not belong together" >&2
+  printf '%s\n' "  - one of the two values was mistyped or truncated" >&2
+  printf '%s\n' "  - the image was not built on main by our public workflow" >&2
+  if [ "${BUNDLE_SOURCE}" = shipped ]; then
+    printf '%s\n' "  - the file in bundles/ changed after this release was tagged" >&2
+  fi
   printf '%s\n' "" >&2
-  printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
-  printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
+  printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
   exit 1
 fi
 
 printf '%s\n' "" >&2
-printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
+printf '%s\n' "COULD NOT CHECK — the check did not finish." >&2
+printf '%s\n' "This is NOT a failed proof. It is also NOT a pass." >&2
 printf '%s\n' "" >&2
 printf '%s\n' "${output}" >&2
 printf '%s\n' "" >&2
-printf '%s\n' "What this means, most likely first:" >&2
-printf '%s\n' "  - the digest and the commit do not belong together" >&2
-printf '%s\n' "  - one of the two values was mistyped or truncated" >&2
-printf '%s\n' "  - the image was not built on main by our public workflow" >&2
-if [ "${BUNDLE_SOURCE}" = shipped ]; then
-  printf '%s\n' "  - the bundle in bundles/ changed after this release was tagged" >&2
-fi
+printf '%s\n' "The usual causes:" >&2
+printf '%s\n' "  - the image registry could not be reached" >&2
+printf '%s\n' "  - a public trust root could not be reached:" >&2
+printf '%s\n' "    tuf-repo-cdn.sigstore.dev or tuf-repo.github.com" >&2
+printf '%s\n' "  - a file in bundles/ is damaged. Get the tag again." >&2
 printf '%s\n' "" >&2
-printf '%s\n' "Change nothing. Send this output to Fhenix." >&2
+printf '%s\n' "Check the network, a proxy, or a firewall rule. See PARTNER_GUIDE.md," >&2
+printf '%s\n' "step 1. Then run the same command again." >&2
+printf '%s\n' "" >&2
+printf '%s\n' "Nothing was written. Do not pin this digest until a check passes." >&2
+printf '%s\n' "Send this output to Fhenix if it does not clear." >&2
 exit 1

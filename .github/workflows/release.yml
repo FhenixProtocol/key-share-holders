@@ -200,21 +200,24 @@ jobs:
           FHENIX_BUNDLE_OUT: partner/bundles
         run: |
           set -euo pipefail
+          # Both `ls` below and `git add` in the PR step fail on a missing path,
+          # and the PR step fails after the commit sequence has started. The
+          # directory is committed today, but nothing else guarantees it.
+          mkdir -p partner/bundles
           partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
           partner/verify-image.sh teecryptor "$TEECRYPTOR_DIGEST" "$TEECRYPTOR_SHA"
           partner/verify-image.sh zee-k      "$ZEEK_DIGEST"       "$ZEEK_SHA"
 
           # Drop the bundles of digests this release no longer pins. Without this
-          # the directory keeps every digest we ever shipped.
-          keep=""
-          for d in "$KEYGEN_DIGEST" "$TEECRYPTOR_DIGEST" "$ZEEK_DIGEST"; do
-            keep="$keep ${d#sha256:}"
-          done
+          # the directory keeps every digest we ever shipped. Match the whole
+          # name, image included, so a right digest under a wrong image name is
+          # dropped too — verify-image.sh would never read that file.
+          keep=" keygen-${KEYGEN_DIGEST#sha256:} teecryptor-${TEECRYPTOR_DIGEST#sha256:} zee-k-${ZEEK_DIGEST#sha256:} "
           for f in partner/bundles/*.jsonl; do
             [[ -e "$f" ]] || continue
-            hex="${f##*-}"
-            case " $keep " in
-              *" ${hex%.jsonl} "*) ;;
+            name="${f##*/}"
+            case "$keep" in
+              *" ${name%.jsonl} "*) ;;
               *) echo "dropping stale bundle $f"; rm -f "$f" ;;
             esac
           done

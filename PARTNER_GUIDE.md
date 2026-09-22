@@ -23,8 +23,9 @@ call with you.
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
 
 - `terraform` 1.9 or later, and `gcloud`.
-- `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses them to prove where each
-  image came from, before it pins anything. Install with `brew install gh jq`, or see
+- `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
+  image came from, before it pins anything. `jq` and `curl` are for the fallback in the
+  note below, which a normal apply does not use. Install with `brew install gh jq`, or see
   https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
   flags this check needs were added; an older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
@@ -39,14 +40,16 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   The proof is read from the public record, not from us.
 
 The release tag carries the signed attestation for every digest it pins, in
-`partner/bundles`. Your apply reads those files, so it calls no GitHub API. That we hand
-you the file grants us nothing: `gh` checks its signature, the identity in its
-certificate and the digest it names against the public trust roots above. A file we
-changed fails.
+`partner/bundles`. Your apply reads those files. It calls no GitHub API.
 
-> **If you pin a digest the tag does not carry** — you are checking an image by hand —
-> the script downloads the attestation from `api.github.com` instead. Then a
-> `COULD NOT CHECK … HTTP 403` means GitHub is rate-limiting your address. The anonymous
+We give you the file. This gives us no advantage. `gh` checks the signature in the file,
+and the identity in the certificate, and the digest that the file names. It does all
+three against the public trust roots above, which we do not control. A file that we
+changed fails the check.
+
+> **You can check a digest that the tag does not carry.** You do this when you examine an
+> image by hand. Then the script downloads the attestation from `api.github.com` instead.
+> A `COULD NOT CHECK … HTTP 403` then means GitHub is rate-limiting your address. The anonymous
 > limit is 60 requests an hour per IP, shared by everyone behind it. Wait and run it
 > again, or pass any GitHub token to raise the limit:
 >
@@ -262,9 +265,16 @@ know it ran, and it names the commit proven for each image.
 > A later release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-If the plan stops with `External Program Execution Failed` on `verify-image.sh`, the
-proof did not hold and nothing was written. Change nothing. Do not edit a digest or a
-`source_sha` to make it pass. Send us the whole error.
+If the plan stops with `External Program Execution Failed` on `verify-image.sh`, read
+the last lines of the output. The script says which of two things happened:
+
+- **`FAIL`** — the proof does not hold. Change nothing. Do not edit a digest or a
+  `source_sha` to make it pass. Send us the whole error.
+- **`COULD NOT CHECK`** — the check did not finish. This says nothing about the image.
+  A host in the table in step 1 was not reachable, or a file in `partner/bundles` is
+  damaged. Correct that, then run the plan again.
+
+Nothing is written in either case.
 
 ## 6. Apply, then verify
 

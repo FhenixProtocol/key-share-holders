@@ -11,11 +11,11 @@
 # You can run the same check by hand:
 #   ./verify-image.sh keygen <digest> <commit>
 #
-# The signed attestation for every digest below ships in ./bundles, carried by
-# the release tag, so this calls no GitHub API. It needs `gh`, `jq` and `curl`
-# on the machine that runs terraform, plus network access to the image registry
-# and the two public trust roots. No GitHub account is required. See
-# PARTNER_GUIDE.md step 1.
+# The release tag carries the signed attestation for every digest below, in
+# ./bundles. This check thus calls no GitHub API. It needs `gh`, `jq` and `curl`
+# on the machine that runs terraform. It also needs network access to the image
+# registry and to the two public trust roots. No GitHub account is required.
+# See PARTNER_GUIDE.md step 1.
 #
 # NOTE: the commit stops here. It is proof material only. The CEL pins the
 # digest and nothing else, so `source_sha` is never passed into the onboarding
