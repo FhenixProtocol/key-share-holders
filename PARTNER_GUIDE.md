@@ -535,8 +535,8 @@ Then run the `verify/` check from step 6 again, and send us the output.
   Use this flag only when a check blocks an urgent revoke. Terraform refuses it on any
   apply that grants read or write access.
 
-  A ceremony release grants write access. During one, add `-var grant_write_access=false`
-  as well. That also closes the ceremony write window, so tell us at once.
+  **During a ceremony, call us before you use it.** That release grants write access, so
+  the bypass needs `-var grant_write_access=false` as well. That stops the ceremony.
 
   **That apply still writes the tag's digests into your gates, and it proves none of
   them.** No binding accompanies them, so nothing can read your share. Re-apply without
