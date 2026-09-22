@@ -10,32 +10,19 @@
 #
 # Exit 0 means the proof holds. Any other exit means DO NOT PIN.
 #
-# WHAT THIS PROVES. Our build emits a SLSA build provenance attestation. GitHub
-# gives the job a short-lived identity, Fulcio issues a certificate, and the
-# result is recorded in the PUBLIC Sigstore transparency log. The certificate
-# names the repository, the workflow file, the branch and the commit. This
-# script asserts all four, plus the exact digest. A pass means: our workflow, on
-# main, built this exact image from this exact commit.
+# A pass means this: our workflow, on main, built this exact image from this
+# exact commit. It does NOT mean the commit is one you approve of. You choose
+# which of our commits you trust.
 #
-# WHAT THIS DOES NOT PROVE. It does not say the commit is one you approve of.
-# You choose which commits you trust, from our public history. This tool only
-# ties a digest to a commit.
+# The release tag carries the signed proof for each digest it pins, in ./bundles,
+# so a normal run calls no GitHub API. Set FHENIX_IGNORE_SHIPPED_BUNDLE=1 to
+# download the proof from GitHub instead and compare.
 #
-# The values below are FIXED. They change only if we move a repository or rename
-# a workflow, and then you get a new release of this repo. Per release you
-# receive two values per image: the digest and the commit.
+# The constants below are FIXED. You never type any of them. Per release you
+# receive two values for each image: the digest and the commit.
 #
-# WHERE THE PROOF COMES FROM. The release tag carries the signed attestation for
-# each digest it pins, in ./bundles. This script uses that copy. A normal apply
-# thus calls no GitHub API.
-#
-# We give you the file. This gives us no advantage. `gh` checks the signature in
-# the file. It checks the identity in the certificate. It checks the digest that
-# the file names. It does all three against the PUBLIC trust roots, which we do
-# not control. A file that we changed fails the check.
-#
-# If ./bundles holds no file for the digest that you ask about, this script uses
-# the public GitHub API instead.
+# PARTNER_GUIDE.md explains why this is safe when we are the ones who give you
+# the file. Keep that explanation there, not here.
 
 set -euo pipefail
 
@@ -284,29 +271,22 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
   exit 0
 fi
 
-# ONLY these mean the proof itself did not hold. Each one is a string that gh
-# prints when a field in the certificate disagrees with what we assert, or when
-# the bundle does not verify against the image at all.
+# ONLY these mean the proof did not hold. An ALLOW-list on purpose: gh also
+# fetches the image manifest and two trust roots, and a deny-list of those
+# failures always has a hole. A hole tells a partner their image is bad when
+# their network is bad.
 #
-# The list is an ALLOW-list on purpose. gh also fetches the image manifest and
-# two public trust roots, and any of that can fail for reasons that say nothing
-# about the image. A deny-list of those failures always has a hole, and a hole
-# tells a partner their image is bad when their network is bad. This way an
-# unknown error reads as "could not check", which is what it is.
-#
-# Match a string that only gh's own checks produce. A general phrase such as
-# "does not match" also appears in a registry digest mismatch, in an x509 error
-# and in a TUF rollover, so it would put the hole straight back.
+# So match only what gh's own checks produce. A general phrase such as "does not
+# match" also appears in a registry mismatch, an x509 error and a TUF rollover.
 #   expected SourceRepository...  the repository, the branch or the commit
 #   expected Issuer to be         the certificate came from another OIDC issuer
 #   verifying with issuer         gh's catch-all: signature, identity or subject
 #   bundle issuer                 the leaf certificate is not from a known CA
 #   no attestations               nothing in the bundle carries the right claim
 #
-# These strings come from one version of gh. A later version could reword one,
-# and a real failure would then read as "could not check". That direction is
-# safe: the exit code is 1 either way, so terraform still stops. Do NOT answer a
-# reworded string by adding a deny-list of infrastructure errors.
+# A later gh could reword one of these, and a real failure would then read as
+# "could not check". That direction is safe, because the exit code is 1 either
+# way. Do NOT answer a reworded string by adding a deny-list.
 if printf '%s' "${output}" | grep -qE \
   'expected SourceRepository|expected Issuer to be|verifying with issuer|bundle issuer|no attestations'; then
   printf '%s\n' "" >&2
