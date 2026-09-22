@@ -10,24 +10,32 @@ on:
       tag:
         description: "Release tag, e.g. v1.1.0"
         required: true
+      # Leave an image empty to carry its pin forward from the previous release.
+      # Fill in only what this release moves. The first release needs all six.
       keygen_digest:
-        description: "keygen image digest (sha256:...)"
-        required: true
+        description: "keygen image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
       keygen_sha:
-        description: "keygen source commit (full 40-hex, from the build summary)"
-        required: true
+        description: "keygen source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       teecryptor_digest:
-        description: "teecryptor image digest (sha256:...)"
-        required: true
+        description: "teecryptor image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
       teecryptor_sha:
-        description: "teecryptor source commit (full 40-hex, from the build summary)"
-        required: true
+        description: "teecryptor source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       zeek_digest:
-        description: "zee-k image digest (sha256:...)"
-        required: true
+        description: "zee-k image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
       zeek_sha:
-        description: "zee-k source commit (full 40-hex, from the build summary)"
-        required: true
+        description: "zee-k source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       ceremony:
         description: "Ceremony release - grants write access for the key ceremony"
         type: boolean
@@ -45,12 +53,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.tag }}
-      KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
-      KEYGEN_SHA: ${{ inputs.keygen_sha }}
-      TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
-      TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
-      ZEEK_DIGEST: ${{ inputs.zeek_digest }}
-      ZEEK_SHA: ${{ inputs.zeek_sha }}
+      IN_KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
+      IN_KEYGEN_SHA: ${{ inputs.keygen_sha }}
+      IN_TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
+      IN_TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
+      IN_ZEEK_DIGEST: ${{ inputs.zeek_digest }}
+      IN_ZEEK_SHA: ${{ inputs.zeek_sha }}
       CEREMONY: ${{ inputs.ceremony }}
       COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
       GH_TOKEN: ${{ github.token }}
@@ -58,6 +66,61 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # An unchanged image should not be retyped. Retyping is how a digest and a
+      # commit drift apart, and the previous tag already holds the proven pair.
+      # Anything left empty is read back from that tag's values.tfvars.
+      - name: Resolve each pin, carrying forward what did not change
+        run: |
+          set -euo pipefail
+          prev_tag="$(git tag --sort=-v:refname | head -1)"
+          prev_file=""
+          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
+            prev_file=prev-values.tfvars
+          else
+            prev_tag=""
+          fi
+
+          # pins.awk prints "<key> <value>" for every pin in a rendered var-file.
+          lookup() {
+            [[ -n "$prev_file" ]] || return 0
+            awk -f .github/scripts/pins.awk "$prev_file" | awk -v k="$1" '$1 == k { print $2 }'
+          }
+
+          # Sets RESOLVED and ORIGIN. Called directly, never in a subshell, so a
+          # missing value stops the run here instead of rendering a broken file.
+          resolve() {
+            local label="$1" key="$2" supplied="$3"
+            if [[ -n "$supplied" ]]; then
+              RESOLVED="$supplied"; ORIGIN="supplied"; return 0
+            fi
+            RESOLVED="$(lookup "$key")"
+            if [[ -z "$RESOLVED" ]]; then
+              echo "::error::$label is empty and there is no previous release to carry it from. Fill it in."
+              exit 1
+            fi
+            ORIGIN="carried from $prev_tag"
+          }
+
+          {
+            echo "| Pin | Value | Source |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          emit() {  # label, pins key, supplied value, env var name
+            resolve "$1" "$2" "$3"
+            echo "$4=$RESOLVED" >> "$GITHUB_ENV"
+            echo "| $1 | \`$RESOLVED\` | $ORIGIN |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          emit "keygen digest"     keygen         "$IN_KEYGEN_DIGEST"     KEYGEN_DIGEST
+          emit "keygen commit"     keygen-sha     "$IN_KEYGEN_SHA"        KEYGEN_SHA
+          emit "teecryptor digest" teecryptor     "$IN_TEECRYPTOR_DIGEST" TEECRYPTOR_DIGEST
+          emit "teecryptor commit" teecryptor-sha "$IN_TEECRYPTOR_SHA"    TEECRYPTOR_SHA
+          emit "zee-k digest"      zee-k          "$IN_ZEEK_DIGEST"       ZEEK_DIGEST
+          emit "zee-k commit"      zee-k-sha      "$IN_ZEEK_SHA"          ZEEK_SHA
+
+          rm -f prev-values.tfvars
 
       - name: Reject a malformed tag, digest, commit or compute project
         run: |
