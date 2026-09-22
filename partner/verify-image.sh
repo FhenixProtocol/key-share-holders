@@ -143,13 +143,13 @@ export DOCKER_CONFIG="${workdir}/docker"
 # Fetched anonymously. This endpoint needs no GitHub account, which is what
 # keeps the check independent of any credential we could hand you.
 #
-# A token is used only if the environment already has one. That never happens on
-# a partner machine; it happens on our own CI, where the anonymous limit of 60
-# requests an hour per IP address is shared with every other runner.
+# Deliberately NOT GITHUB_TOKEN or GH_TOKEN. Those are commonly exported on a
+# developer machine, and an expired one turns a working check into a permanent
+# 401 with advice that never helps. Only our own CI sets the name below, to lift
+# the anonymous limit of 60 requests an hour per IP address.
 auth=()
-token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-if [ -n "${token}" ]; then
-  auth=(-H "Authorization: Bearer ${token}")
+if [ -n "${FHENIX_PROVENANCE_TOKEN:-}" ]; then
+  auth=(-H "Authorization: Bearer ${FHENIX_PROVENANCE_TOKEN}")
 fi
 # ${auth[@]+...} because bash 3.2 errors on an empty array under `set -u`.
 http="$(curl -sS -w '%{http_code}' -o "${response}" \
@@ -217,6 +217,26 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
       "${IMAGE}" "${DIGEST}" "${COMMIT}"
   fi
   exit 0
+fi
+
+# gh does two more network operations: it fetches the image manifest from the
+# registry, and Sigstore's trust root. A failure in either says nothing about the
+# image, so it must not be reported as a failed proof. A genuine proof failure
+# names a certificate field instead, and matches none of these.
+if printf '%s' "${output}" | grep -qE \
+  'failed to fetch remote image|error getting credentials|denied access to the requested resource|MANIFEST_UNKNOWN|UNAUTHORIZED|DENIED|TUF|trusted root|connection refused|no such host|i/o timeout|context deadline exceeded|tls:'; then
+  printf '%s\n' "" >&2
+  printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof." >&2
+  printf '%s\n' "" >&2
+  printf '%s\n' "${output}" >&2
+  printf '%s\n' "" >&2
+  printf '%s\n' "Something in the path could not be reached: the image registry, or" >&2
+  printf '%s\n' "Sigstore's trust root. Check the network, a proxy, or a firewall rule." >&2
+  printf '%s\n' "See PARTNER_GUIDE.md, step 1." >&2
+  printf '%s\n' "" >&2
+  printf '%s\n' "Nothing was written. The image is neither proven nor disproven." >&2
+  printf '%s\n' "Tell Fhenix only if it keeps happening." >&2
+  exit 1
 fi
 
 printf '%s\n' "" >&2

@@ -40,21 +40,15 @@ locals {
     },
   )
 
-  # Prove a digest exactly when this apply GRANTS something to it. That keeps two
-  # properties at once:
+  # EVERY pinned digest is proven on EVERY apply. A digest is written into a CEL
+  # whether or not a binding accompanies it, and the CEL is the security boundary
+  # that `verify/` and your own gcloud checks assert against. Gating the proof on
+  # the grant flags would leave a digest in a gate that nothing had checked.
   #
-  #  - Nothing is ever granted to an unproven image. The keygen digest is proven
-  #    whenever the write binding is created, and each reader digest whenever its
-  #    secretAccessor binding is created.
-  #  - The emergency brake works offline. `grant_read_access = false` with write
-  #    already frozen grants nothing, so it needs no check and no network.
-  #
-  # A CEL that pins an unproven digest but has no binding grants nothing, which is
-  # why gating on the grant flags is enough.
-  pinned_images = merge(
-    var.grant_write_access ? { for k, v in local.all_pinned_images : k => v if k == "keygen" } : {},
-    var.grant_read_access ? { for k, v in local.all_pinned_images : k => v if k != "keygen" } : {},
-  )
+  # The one escape is var.skip_provenance_check, which you pass deliberately and
+  # which shows in your plan. It exists so a revoke is possible when GitHub is
+  # unreachable. It is never part of a normal apply.
+  pinned_images = var.skip_provenance_check ? {} : local.all_pinned_images
 }
 
 data "external" "provenance" {

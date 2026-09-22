@@ -22,6 +22,24 @@ variable "image_digest" {
   type        = string
   default     = ""
   description = "Optional exact image pin (sha256:...). Empty = unpinned (early dev). Set to require a partner re-apply on every keygen image rebuild."
+
+  # Caught here, with a readable message. Without it a truncated paste reaches
+  # the provenance check and fails as an opaque external-program error.
+  validation {
+    condition     = var.image_digest == "" || can(regex("^sha256:[0-9a-f]{64}$", var.image_digest))
+    error_message = "image_digest must be empty, or \"sha256:\" plus 64 lowercase hex characters."
+  }
+}
+
+variable "skip_provenance_check" {
+  type    = bool
+  default = false
+  # EMERGENCY USE ONLY, and only together with grant_read_access = false. The
+  # provenance check needs api.github.com, the image registry and Sigstore's
+  # trust root. If you must revoke while any of those is unreachable, this turns
+  # the check off for that apply. It is visible in your plan and it is never part
+  # of a normal apply. Never pass it to grant or to re-pin anything.
+  description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when GitHub is unreachable. Never use it on an apply that grants or re-pins."
 }
 
 variable "source_sha" {
@@ -58,6 +76,11 @@ variable "attested_readers" {
   }))
   default     = {}
   description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. source_sha is the commit that digest was built from; it is proven before the apply and never enters the CEL. Empty map = no read path at all."
+
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^sha256:[0-9a-f]{64}$", r.image_digest))])
+    error_message = "every attested reader must pin \"sha256:\" plus 64 lowercase hex characters."
+  }
 
   validation {
     condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[0-9a-f]{40}$", r.source_sha))])

@@ -180,9 +180,12 @@ jobs:
       # The same check every partner's apply runs. A correctly shaped but wrong
       # source_sha passes the regex above, ships in the tag, and then fails at
       # EVERY partner with "DO NOT PIN THIS DIGEST" — one typo, N incidents.
-      # The runner has gh, jq and curl. GH_TOKEN is in the job env, and the script
-      # uses it for the API call, so the anonymous 60/hour limit does not apply.
+      # The runner has gh, jq and curl. FHENIX_PROVENANCE_TOKEN lifts the anonymous
+      # 60/hour limit, which GitHub-hosted runners share by IP. The script uses
+      # that name, not GITHUB_TOKEN, so a partner's ambient token never applies.
       - name: Prove each digest came from the commit beside it
+        env:
+          FHENIX_PROVENANCE_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
