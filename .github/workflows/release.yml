@@ -36,10 +36,6 @@ on:
         description: "zee-k source commit (full 40-hex) — empty = unchanged"
         required: false
         default: ""
-      ceremony:
-        description: "Ceremony release - grants write access for the key ceremony"
-        type: boolean
-        default: false
   pull_request:
     types: [closed]
 
@@ -59,7 +55,6 @@ jobs:
       IN_TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
       IN_ZEEK_DIGEST: ${{ inputs.zeek_digest }}
       IN_ZEEK_SHA: ${{ inputs.zeek_sha }}
-      CEREMONY: ${{ inputs.ceremony }}
       COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -226,19 +221,6 @@ jobs:
       - name: Render values.tfvars and EXPECTED.md
         run: |
           set -euo pipefail
-          if [[ "$CEREMONY" == "true" ]]; then
-            printf '%s\n' \
-              '# Ceremony release: our enclave may add ONE version to each secret.' \
-              '# The next release drops this line; re-applying then removes the' \
-              '# write binding (the plan shows exactly 2 destroys).' \
-              'grant_write_access = true' > grant.txt
-            word='GRANTED - this is a ceremony release'
-            ceremony_bool='true'
-          else
-            echo '# Not a ceremony release: write access stays frozen (module default).' > grant.txt
-            word='frozen'
-            ceremony_bool='false'
-          fi
           render() {
             sed -e "s|__TAG__|$TAG|g" \
                 -e "s|__COMPUTE_PROJECT__|$COMPUTE_PROJECT|g" \
@@ -251,15 +233,9 @@ jobs:
                 -e "s|__KEYGEN_DIGEST_HEX__|${KEYGEN_DIGEST#sha256:}|g" \
                 -e "s|__TEECRYPTOR_DIGEST_HEX__|${TEECRYPTOR_DIGEST#sha256:}|g" \
                 -e "s|__ZEEK_DIGEST_HEX__|${ZEEK_DIGEST#sha256:}|g" \
-                -e "s|__CEREMONY_WORD__|$word|g" \
-                -e "s|__CEREMONY_BOOL__|$ceremony_bool|g" \
                 "$1"
           }
-          # `sed r` splices the file in, so the multi-line ceremony block survives.
-          render .github/release-templates/values.tfvars.tmpl \
-            | sed -e '/__GRANT_WRITE_ACCESS__/r grant.txt' \
-                  -e '/__GRANT_WRITE_ACCESS__/d' \
-            > values.tfvars
+          render .github/release-templates/values.tfvars.tmpl > values.tfvars
           # Compare against the previous tag so EXPECTED.md states the exact
           # before/after, not just a shape. Pure git - no credentials needed.
           prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
@@ -275,7 +251,7 @@ jobs:
             | sed -e '/__PREVIOUS_DIFF__/r diff.md' \
                   -e '/__PREVIOUS_DIFF__/d' \
             > EXPECTED.md
-          rm -f grant.txt diff.md prev-values.tfvars
+          rm -f diff.md prev-values.tfvars
           echo "--- values.tfvars"
           cat values.tfvars
           echo "--- EXPECTED.md"
@@ -312,15 +288,8 @@ jobs:
       - name: Prepend the CHANGELOG entry
         run: |
           set -euo pipefail
-          if [[ "$CEREMONY" == "true" ]]; then
-            ceremony_line='**Ceremony release** - write access is granted for this apply.'
-          else
-            ceremony_line='Not a ceremony release - write access stays frozen.'
-          fi
           printf '%s\n' \
             "## $TAG - $(date -u +%Y-%m-%d)" \
-            "" \
-            "$ceremony_line" \
             "" \
             "| Image | Digest | Source commit |" \
             "|---|---|---|" \
@@ -347,7 +316,7 @@ jobs:
             "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
             "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" \
-            "Ceremony: \`$CEREMONY\`. Compute project: \`$COMPUTE_PROJECT\`." \
+            "Compute project: \`$COMPUTE_PROJECT\`." \
             "" \
             "Review \`values.tfvars\` and \`EXPECTED.md\` against the build outputs" \
             "before merging." > body.md

@@ -128,7 +128,8 @@ action for each ceremony:
 grant_write_access = true    # ONLY for the apply before a key ceremony
 ```
 
-After the ceremony, apply the post-ceremony tag: its `values.tfvars` does not carry the line. Partners never edit that file — see `PARTNER_GUIDE.md` step 11. This removes the
+After the ceremony, apply again without that flag — see `PARTNER_GUIDE.md` step 11. The
+default is `false`, so this removes the
 `secretVersionAdder` binding. After that, a write attempt by our enclave fails with a
 permission error. The error is visible in our logs and in your audit log. It is never a
 silent success. The secret, its versions, and the pool and provider do not change. The

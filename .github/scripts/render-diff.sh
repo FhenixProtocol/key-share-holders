@@ -31,15 +31,6 @@ awk -f "$here/pins.awk" "$new_file"  > "$work/pins.new"
 
 lookup() { awk -v k="$1" '$1 == k { print $2 }' "$2"; }
 
-# grant_write_access is only ever emitted as a bare top-level `= true`.
-write_state() {
-  if grep -qE '^grant_write_access[[:space:]]*=[[:space:]]*true' "$1"; then
-    echo "GRANTED"
-  else
-    echo "frozen"
-  fi
-}
-
 changed=""
 unchanged=""
 rows=""
@@ -65,15 +56,6 @@ for key in compute keygen keygen-sha teecryptor teecryptor-sha zee-k zee-k-sha; 
   fi
 done
 
-old_write="$(write_state "$prev_file")"
-new_write="$(write_state "$new_file")"
-if [[ "$old_write" == "$new_write" ]]; then
-  rows="$rows| write access | $old_write | $new_write | unchanged |"$'\n'
-else
-  rows="$rows| write access | $old_write | $new_write | **CHANGED** |"$'\n'
-  changed="$changed write-access"
-fi
-
 printf '%s\n' "## What changes from $prev_tag" ""
 printf 'Changed: %s\n\n' "$(echo "${changed:-nothing}" | sed 's/^ //; s/ /, /g')"
 printf '%s\n' "| Pin | $prev_tag | $new_tag | |" "|---|---|---|---|"
@@ -83,15 +65,3 @@ printf '%s\n' \
   "Your plan must show exactly the **CHANGED** rows above taking effect, and nothing" \
   "else. If a pin marked *unchanged* appears in your plan, or a resource is added or" \
   "destroyed that this table does not explain, stop and send us the plan."
-
-# The "exactly 2 destroys" promise holds only when nothing else moved. A release
-# that closes the ceremony window AND rotates an image destroys more than two, and
-# the partner is told to stop on any other count.
-if [[ "$old_write" == "GRANTED" && "$new_write" == "frozen" \
-      && "$(echo "${changed:-}" | tr -d ' ')" == "write-access" ]]; then
-  printf '%s\n' \
-    "" \
-    "This release closes the ceremony write window. Your plan shows exactly **2" \
-    "destroys** — the two \`secretVersionAdder\` bindings. That is the intended end" \
-    "state, not drift."
-fi
