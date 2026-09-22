@@ -487,6 +487,9 @@ Then run the `verify/` check from step 6 again, and send us the output.
   ```
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
+  **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the
+  brake is on.** That is the brake working: there is no reader binding left. It is the one
+  case where that message is expected.
 
 ## Ongoing commitment
 
