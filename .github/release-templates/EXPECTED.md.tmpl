@@ -21,6 +21,17 @@ printed by it, and they never reach a CEL. Read them back with
 | zee-k source commit | `__ZEEK_SHA__` |
 | write access | `__CEREMONY_WORD__` |
 
+This tag also carries the signed proof for each digest above, in `partner/bundles`:
+
+```
+keygen-__KEYGEN_DIGEST_HEX__.jsonl
+teecryptor-__TEECRYPTOR_DIGEST_HEX__.jsonl
+zee-k-__ZEEK_DIGEST_HEX__.jsonl
+```
+
+Your apply reads those three files. It calls no GitHub API. If one is absent, the check
+downloads it from `api.github.com` instead, and the result is the same.
+
 __PREVIOUS_DIFF__
 
 ## Your plan

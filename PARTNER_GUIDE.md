@@ -26,8 +26,8 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
 - `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
   image came from, before it pins anything. `jq` and `curl` are only for the fallback.
   The note below describes it. A normal apply does not use it. Install with `brew install gh jq`, or see
-  https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
-  flags this check needs were added; an older `gh` stops with a clear message.
+  https://github.com/cli/cli#installation. Check with `gh --version`. Version 2.68 added
+  the flags that this check needs. An older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
 - Network access from the machine that runs terraform to three hosts:
 
@@ -36,6 +36,7 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   | `europe-west4-docker.pkg.dev` | the image, to confirm the digest resolves |
   | `tuf-repo-cdn.sigstore.dev` | Sigstore's public trust root |
   | `tuf-repo.github.com` | GitHub's public trust root |
+  | `api.github.com` | **fallback only**, see the note below |
 
   The proof is read from the public record, not from us.
 
@@ -51,14 +52,21 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
+You can test that claim. Set `FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads
+the attestation from GitHub instead of reading our file:
+
+```bash
+FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
+```
+
 > **You can check a digest that the tag does not carry.** You examine an image by hand.
 > Then the script downloads the attestation from `api.github.com` instead.
-> A `COULD NOT CHECK … HTTP 403` then means GitHub is rate-limiting your address. The anonymous
-> limit is 60 requests an hour per IP, shared by everyone behind it. Wait and run it
-> again, or pass any GitHub token to raise the limit:
+> A `COULD NOT CHECK … HTTP 403` then means GitHub limits requests from your address. The anonymous
+> limit is 60 requests an hour for each IP address. Everyone behind your address shares
+> that limit. Wait and run the command again, or pass any GitHub token to raise the limit:
 >
 > ```bash
-> FHENIX_PROVENANCE_TOKEN=<token> ./verify-image.sh …
+> FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
 > ```
 >
 > A token is never required. It only raises the limit, and it changes nothing about what
@@ -102,7 +110,10 @@ The two commands above check what you will apply. This one checks what we publis
 ### What the release carries
 
 Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
-plan and your `verify/` run must show. Read
+plan and your `verify/` run must show.
+
+The tag also carries `partner/bundles`: one signed attestation for each pinned digest.
+Your apply reads those files. You do not touch them. See `partner/bundles/README.md`. Read
 `partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
 partner side. There is no binary and no service in this design.
 
@@ -507,12 +518,19 @@ Then run the `verify/` check from step 6 again, and send us the output.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
   the read set. The network continues while enough partners remain. Use it with care,
-  and tell us. A revoke skips the provenance check, so the brake works even when GitHub
-  is unreachable. From your clone, in `partner/`:
+  and tell us. From your clone, in `partner/`:
   ```bash
   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
     -var grant_read_access=false
   ```
+  The provenance check still runs on a revoke. If a host in the table in step 1 is
+  unreachable, add `skip_provenance_check`:
+  ```bash
+  terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+    -var grant_read_access=false -var skip_provenance_check=true
+  ```
+  Terraform refuses that flag on an apply that grants anything, so it can only ever
+  widen a revoke. Use it only when a check blocks an urgent revoke.
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
   **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the

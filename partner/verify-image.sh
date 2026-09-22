@@ -116,10 +116,8 @@ printf '%s' "${DIGEST}" | grep -Eq '^sha256:[0-9a-f]{64}$' \
 printf '%s' "${COMMIT}" | grep -Eq '^[0-9a-f]{40}$' \
   || die "commit must be 40 lowercase hex characters (the full SHA, not the short one). Got '${COMMIT}'."
 
-for tool in gh jq curl; do
-  command -v "${tool}" >/dev/null 2>&1 \
-    || die "${tool} is not installed. See PARTNER_GUIDE.md, step 1."
-done
+command -v gh >/dev/null 2>&1 \
+  || die "gh is not installed. See PARTNER_GUIDE.md, step 1."
 
 # --source-ref and --source-digest arrived in gh 2.68.0. An older gh exits with
 # "unknown flag", which this script would otherwise report as a failed proof.
@@ -157,6 +155,13 @@ export DOCKER_CONFIG="${workdir}/docker"
 
 # Used only when the release ships no bundle for this digest.
 fetch_bundle_from_api() {
+  # Checked here, not at the top: a normal apply reads a shipped file and needs
+  # neither of these. The guide says the same, so the two must agree.
+  for tool in jq curl; do
+    command -v "${tool}" >/dev/null 2>&1 \
+      || die "${tool} is not installed, and this digest needs the fallback to api.github.com. See PARTNER_GUIDE.md, step 1."
+  done
+
   # Fetched anonymously. This endpoint needs no GitHub account, which is what
   # keeps the check independent of any credential we could hand you.
   #
@@ -204,6 +209,10 @@ fetch_bundle_from_api() {
     elif [ "${http}" = "000" ]; then
       printf '%s\n' "api.github.com could not be reached at all. Check the network, a" >&2
       printf '%s\n' "proxy, or a firewall rule. See PARTNER_GUIDE.md, step 1." >&2
+    elif [ "${http}" = "401" ]; then
+      printf '%s\n' "api.github.com refused the credentials in FHENIX_PROVENANCE_TOKEN." >&2
+      printf '%s\n' "That token is optional. Unset it and run this again:" >&2
+      printf '%s\n' "  unset FHENIX_PROVENANCE_TOKEN" >&2
     else
       printf '%s\n' "api.github.com answered with an error. Wait, then try again." >&2
     fi
@@ -221,17 +230,29 @@ fetch_bundle_from_api() {
 }
 
 # The release tag ships the signed attestation for every digest it pins, so the
-# usual path reaches no GitHub API. The file name carries the digest, so a
-# bundle from another release can never stand in for this one: either the exact
-# file is here, or we fetch.
+# usual path reaches no GitHub API. The file name carries the digest. A file
+# from another release can thus never replace this one: either the exact file is
+# here, or we fetch.
+#
+# FHENIX_IGNORE_SHIPPED_BUNDLE makes this download instead. Set it to compare
+# what we gave you against what GitHub serves. We document it because the claim
+# "our copy is checked as hard as yours" is worth more if you can test it.
 shipped="${SCRIPT_DIR}/bundles/${IMAGE}-${DIGEST#sha256:}.jsonl"
-if [ -s "${shipped}" ]; then
+if [ -n "${FHENIX_IGNORE_SHIPPED_BUNDLE:-}" ]; then
+  BUNDLE_SOURCE=api
+  say "  proof   api.github.com (FHENIX_IGNORE_SHIPPED_BUNDLE is set)"
+  fetch_bundle_from_api
+elif [ -s "${shipped}" ]; then
   BUNDLE_SOURCE=shipped
   cp "${shipped}" "${bundle}"
   say "  proof   bundles/${IMAGE}-${DIGEST#sha256:}.jsonl (shipped in this release)"
+elif [ -e "${shipped}" ]; then
+  # Present but empty. Saying "ships no bundle" here would be untrue, and it
+  # would send the partner to look for a network problem they do not have.
+  die "the file bundles/${IMAGE}-${DIGEST#sha256:}.jsonl is empty. It is damaged. Get the release tag again."
 else
   BUNDLE_SOURCE=api
-  say "  proof   api.github.com (this release ships no bundle for this digest)"
+  say "  proof   api.github.com (this release ships no file for this digest)"
   fetch_bundle_from_api
 fi
 say ""
@@ -281,6 +302,11 @@ fi
 #   verifying with issuer         gh's catch-all: signature, identity or subject
 #   bundle issuer                 the leaf certificate is not from a known CA
 #   no attestations               nothing in the bundle carries the right claim
+#
+# These strings come from one version of gh. A later version could reword one,
+# and a real failure would then read as "could not check". That direction is
+# safe: the exit code is 1 either way, so terraform still stops. Do NOT answer a
+# reworded string by adding a deny-list of infrastructure errors.
 if printf '%s' "${output}" | grep -qE \
   'expected SourceRepository|expected Issuer to be|verifying with issuer|bundle issuer|no attestations'; then
   printf '%s\n' "" >&2

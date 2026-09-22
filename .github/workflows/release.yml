@@ -248,6 +248,9 @@ jobs:
                 -e "s|__TEECRYPTOR_SHA__|$TEECRYPTOR_SHA|g" \
                 -e "s|__ZEEK_DIGEST__|$ZEEK_DIGEST|g" \
                 -e "s|__ZEEK_SHA__|$ZEEK_SHA|g" \
+                -e "s|__KEYGEN_DIGEST_HEX__|${KEYGEN_DIGEST#sha256:}|g" \
+                -e "s|__TEECRYPTOR_DIGEST_HEX__|${TEECRYPTOR_DIGEST#sha256:}|g" \
+                -e "s|__ZEEK_DIGEST_HEX__|${ZEEK_DIGEST#sha256:}|g" \
                 -e "s|__CEREMONY_WORD__|$word|g" \
                 -e "s|__CEREMONY_BOOL__|$ceremony_bool|g" \
                 "$1"
@@ -359,9 +362,12 @@ jobs:
           gh pr create --title "release $TAG" --base main --head "$branch" --body-file body.md
 
   tag:
+    # base.ref matters: without it any merged PR whose title starts "release v"
+    # tags whatever it merged into, on any branch.
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.merged == true
+      && github.event.pull_request.base.ref == 'main'
       && startsWith(github.event.pull_request.title, 'release v')
     runs-on: ubuntu-latest
     env:

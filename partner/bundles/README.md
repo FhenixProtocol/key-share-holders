@@ -8,8 +8,9 @@ of the name. A file from another release can thus never replace this one.
 `verify-image.sh` looks for the exact name. If that file is absent, the script downloads
 the attestation from `api.github.com`.
 
-A file holds every attestation that GitHub published for that digest, one for each line.
-The script asserts several fields. `gh` selects the attestation that matches all of them.
+A file holds every attestation that GitHub published for that digest. One attestation is
+on each line. The script asserts several fields. `gh` selects the attestation that
+matches all the fields.
 
 **Do not change these files.** We give them to you, and this gives us no advantage. `gh`
 checks three things against the public trust roots, which we do not control:
@@ -29,3 +30,6 @@ curl -s https://api.github.com/repos/FhenixProtocol/<repo>/attestations/<digest>
 
 There is one difference from that record. A file here keeps its proof after GitHub stops
 to serve it. This design has no revocation, so the two prove the same thing.
+
+To read the public record instead of this file, set `FHENIX_IGNORE_SHIPPED_BUNDLE=1`
+before you run `verify-image.sh`.
