@@ -19,7 +19,6 @@ printed by it, and they never reach a CEL. Read them back with
 | teecryptor source commit | `__TEECRYPTOR_SHA__` |
 | zee-k image digest (read gate on `cofhe-tee-zk-signer`) | `__ZEEK_DIGEST__` |
 | zee-k source commit | `__ZEEK_SHA__` |
-| write access | `__CEREMONY_WORD__` |
 
 This tag also carries the signed proof for each digest above, in `partner/bundles`:
 
@@ -36,18 +35,23 @@ __PREVIOUS_DIFF__
 
 ## Your plan
 
-If this is your **first** apply, expect **15 to add, 0 to change, 0 to destroy** — or
-**17** for a ceremony release, where the two extra are the `secretVersionAdder`
-bindings. Your plan also shows a `provenance_verified` output; that is the proof the
-provenance check ran.
+If this is your **first** apply, expect **15 to add, 0 to change, 0 to destroy**. Two
+more are added if you apply with `-var grant_write_access=true`, which we ask for only
+around a key ceremony. Your plan also shows a `provenance_verified` output; that is the
+proof the provenance check ran.
 
 If you are **upgrading** from an earlier tag, the table above is the authority: your
 plan must show those CHANGED rows taking effect and nothing else.
 
 A changed **consumer** digest (teecryptor, zee-k) shows as 1 change plus 1 destroy and
 1 add: its read binding names the digest inside the member string, which cannot be
-edited, so the binding is replaced. A changed **keygen** digest shows as 1 change. Those
-destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
+edited, so the binding is replaced.
+
+A changed **keygen** digest shows as 1 change. If you hold write access at the time, it
+also destroys and adds the write binding, for the same reason: that binding names the
+digest too.
+
+Those destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
 
 ## Your verify run
 
@@ -59,6 +63,5 @@ destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
           + teecryptor = "__TEECRYPTOR_DIGEST__"
           + zee-k      = "__ZEEK_DIGEST__"
         }
-      + write_access_granted = __CEREMONY_BOOL__
     }
 ```

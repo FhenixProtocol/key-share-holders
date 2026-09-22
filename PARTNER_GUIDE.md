@@ -138,8 +138,6 @@ service_project_id = "fhenix-compute-project"
 image_digest = "sha256:1111…"
 source_sha   = "84028ad…"
 
-# Not a ceremony release: write access stays frozen (module default).
-
 # Only these exact consumer images may READ your share — each on ONE secret.
 attested_readers = {
   teecryptor = {
@@ -157,15 +155,8 @@ attested_readers = {
 }
 ```
 
-A **ceremony** release differs in one place. The `# Not a ceremony release` line is
-replaced by:
-
-```hcl
-# Ceremony release: our enclave may add ONE version to each secret.
-# The next release drops this line; re-applying then removes the
-# write binding (the plan shows exactly 2 destroys).
-grant_write_access = true
-```
+`values.tfvars` never grants write access. That is an apply-time flag, and it appears
+only around a key ceremony. See steps 8 to 11.
 
 ### Where each image came from
 
@@ -247,11 +238,12 @@ terraform init -reconfigure -input=false \
   && terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 ```
 
-**Correct result:** 15 resources to add, or **17 for a ceremony release** — the two
-extra are the `secretVersionAdder` bindings. Zero to change. Zero to destroy.
+**Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
+added if you apply with `-var grant_write_access=true`, which we ask for only around a
+key ceremony.
 
 ```
-Plan: 15 to add, 0 to change, 0 to destroy.      # 17 for a ceremony release
+Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=true
 
   # google_project_service.apis            -> secretmanager, iam, iamcredentials, sts, cloudresourcemanager
   # google_project_iam_audit_config.secretmanager   -> Data Access logs for Secret Manager
@@ -260,7 +252,7 @@ Plan: 15 to add, 0 to change, 0 to destroy.      # 17 for a ceremony release
   # google_iam_workload_identity_pool_provider      -> "cofhe-tee-keygen-provider"
   # google_iam_workload_identity_pool.reader_pool   -> "cofhe-tee-reader-pool"
   # google_iam_workload_identity_pool_provider.reader -> "teecryptor-reader", "zee-k-reader"
-  # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2, ceremony release only)
+  # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2, only with grant_write_access=true)
   # google_secret_manager_secret_iam_member.attested_read  -> secretAccessor      (x2)
 
 Changes to Outputs:
@@ -355,6 +347,17 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 # expect: Listed 0 items.
 ```
 
+We then ask you to open the write window. It is one apply, with one extra flag:
+
+```bash
+terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+  -var grant_write_access=true
+# Plan: 2 to add, 0 to change, 0 to destroy.   # the two secretVersionAdder bindings
+```
+
+Step 11 closes it again. **We never ask for this flag at any other time.** If a request
+for it does not come with a scheduled ceremony, stop and call us.
+
 ## 9. During the ceremony
 
 **Nothing to run.** Be available. If your project rejects the write, the ceremony
@@ -390,52 +393,38 @@ never a `user:` and never a `serviceAccount:`.
 
 ## 11. Freeze write access again
 
-One closing action: close the write window that the ceremony opened. Our write access
-is for bootstrap only. **The module default is frozen** (`grant_write_access =
-false`). The `values.tfvars` of the ceremony release sets it to `true` for that one
-apply. We then publish a **post-ceremony tag** whose `values.tfvars` does not carry
-that line. You check it out and apply. This removes the write binding.
+One closing action: close the write window that the ceremony opened. Our write access is
+for bootstrap only. **The module default is frozen** (`grant_write_access = false`), so
+you close it by applying without the flag you used in step 8.
 
 ```bash
-# 1. take the post-ceremony tag
-git fetch --tags && git checkout <post-ceremony-tag>
-grep grant_write_access ../values.tfvars   # expect: no match
-
-# 1b. re-run init. A release may add a provider, and plan fails until you do.
-#     It is safe to run at any time and changes no infrastructure.
-terraform init -reconfigure -input=false \
-  -backend-config="bucket=<your-project>-tfstate" \
-  -backend-config="prefix=cofhe-tdx-keygen/partner"
-
-# 2. plan — expect EXACTLY 2 destroys, nothing else
+# 1. plan — expect EXACTLY 2 destroys, nothing else
 terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 #   Plan: 0 to add, 0 to change, 2 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-zk-signer"]
 
-# 3. apply
+# 2. apply
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
 
-# 4. check that both secrets are frozen — same check as step 6, now with no write binding
+# 3. check that both secrets are frozen — same check as step 6, now with no write binding
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 # success: a SUCCESS block with write_access_granted = false
 # failure: "CHECK FAILED: the share … is still writable" — send it to Fhenix
 ```
 
-> **Frozen is the default. If you forget this step, the result is safe.** If you apply
-> again later for a different reason (for example, a new consumer digest) and the
-> ceremony line is not there, write access stays removed. The old behaviour was the
-> opposite: an absent flag gave write access again, silently. That is why we changed
-> the default.
+> **Frozen is the default. If you forget this step, the result is safe.** The next apply
+> you run for any other reason closes the window, because you will not pass the flag
+> again. The old behaviour was the opposite: an absent flag gave write access back,
+> silently. That is why we changed the default.
 
-> If the plan in item 2 destroys anything other than the two `attested_add` bindings
+> If the plan in item 1 destroys anything other than the two `attested_add` bindings
 > (for example, a **secret** or an `attested_read` binding), **do not apply**.
 > Contact us.
 
-This is reversible. A future key rotation ships as a new ceremony release, whose
-`values.tfvars` carries the line again. Your read gates do not change. Decryption
-continues to work.
+This is reversible. A future key rotation asks you for the flag again. Your read gates do
+not change. Decryption continues to work.
 
 ## The End
 

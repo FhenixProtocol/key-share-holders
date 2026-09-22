@@ -31,7 +31,6 @@ Actions → **release** → Run workflow. Fill in:
 
 - the tag, as `vX.Y.Z`
 - the digest and commit of each image **you changed**
-- `Ceremony release`, only when a key ceremony follows
 
 **Leave an unchanged image empty.** The workflow carries its pin forward from the previous
 tag. The first release has nothing to carry, so it needs all six values.
@@ -74,17 +73,15 @@ the release notes.
 
 The tag only. No files, no digests in a message. The tag carries everything.
 
-## The ceremony flag
+## Key ceremonies are not releases
 
-Set `Ceremony release` for the release **before** a key ceremony. It adds
-`grant_write_access = true`, which lets our enclave write each share once.
+A release pins images. It never grants write access. `values.tfvars` does not carry
+`grant_write_access`, and the module default is `false`.
 
-**The next release must clear it.** Applying that release removes the write binding. The
-partner's plan then shows exactly 2 destroys. See `PARTNER_GUIDE.md` step 11.
-
-**That release changes no image.** Leave all six image fields empty so every pin carries
-forward. Rotating an image in the same release adds destroys of its own, and the partner
-is told to stop when the count is not exactly 2.
+Write access is an apply-time flag. Around a ceremony you ask the partner to apply with
+`-var grant_write_access=true`, and to re-apply without it afterwards. That is the same
+pair of commands we run against our own staging projects. No release is involved, and
+no tag records it.
 
 ## First release versus later ones
 

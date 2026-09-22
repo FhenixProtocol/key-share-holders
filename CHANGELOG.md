@@ -1,7 +1,7 @@
 # Changelog
 
 One entry per tag. Each entry records the digests that `values.tfvars` pinned for that
-release, and whether the release was a ceremony release (`grant_write_access = true`).
+release.
 
 `.github/workflows/release.yml` writes the entries. Do not edit them by hand.
 
