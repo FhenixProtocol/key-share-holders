@@ -8,9 +8,12 @@ A release is one dispatch. You type no file by hand.
 
 Run the build workflow from `main` in each repo you are releasing:
 
-- [`cofhe-tdx-keygen`](https://github.com/FhenixProtocol/cofhe-tdx-keygen)
-- [`teecryptor`](https://github.com/FhenixProtocol/teecryptor)
-- [`zee-k-verifier`](https://github.com/FhenixProtocol/zee-k-verifier)
+- [`cofhe-tdx-keygen`](https://github.com/FhenixProtocol/cofhe-tdx-keygen) — `build-keygen-tdx.yml`
+- [`teecryptor`](https://github.com/FhenixProtocol/teecryptor) — `build-teecryptor.yml`
+- [`zee-k-verifier`](https://github.com/FhenixProtocol/zee-k-verifier) — `build-zk-verifier-tdx.yml`
+
+The partner check names these exact workflow files. An image built by any other workflow
+in the same repo fails the proof.
 
 Each run summary prints two values: `image_digest` and `source_sha`. Take both.
 
@@ -18,8 +21,9 @@ Each run summary prints two values: `image_digest` and `source_sha`. Take both.
 > HAND THIS TO A PARTNER**, the attestation failed. Re-run the build. That digest has no
 > provenance, so every partner apply rejects it.
 
-Never release a `dev-*` build. It carries a real attestation, so the partner check passes.
-Only you know it is not a release.
+Never release a `dev-*` build. These workflows run only on `main`, so a `dev-*` tag still
+produces a real attestation and the partner check passes. Only you know it is not a
+release.
 
 ## 2. Dispatch `release.yml`
 
@@ -31,6 +35,13 @@ Actions → **release** → Run workflow. Fill in:
 
 **Leave an unchanged image empty.** The workflow carries its pin forward from the previous
 tag. The first release has nothing to carry, so it needs all six values.
+
+A digest and its commit carry forward independently. Fill both or neither: filling only
+the digest keeps the old commit, and the run then fails at the proof step with what looks
+like an attestation problem.
+
+The compute project is not a dispatch input. It comes from the repository variable
+`FHENIX_COMPUTE_PROJECT`, and the run fails if it is unset.
 
 The workflow then:
 
@@ -49,6 +60,8 @@ Read that table.
 
 Compare `values.tfvars` and `EXPECTED.md` against the build summaries. Then merge.
 
+**Do not rename the pull request.** The tag job reads the tag out of its title.
+
 Merging tags `main`, creates the GitHub Release, and puts the source-tarball sha256 into
 the release notes.
 
@@ -64,6 +77,10 @@ Set `Ceremony release` for the release **before** a key ceremony. It adds
 **The next release must clear it.** Applying that release removes the write binding. The
 partner's plan then shows exactly 2 destroys. See `PARTNER_GUIDE.md` step 11.
 
+**That release changes no image.** Leave all six image fields empty so every pin carries
+forward. Rotating an image in the same release adds destroys of its own, and the partner
+is told to stop when the count is not exactly 2.
+
 ## First release versus later ones
 
 Your steps do not change. Three things differ:
@@ -75,7 +92,6 @@ Your steps do not change. Three things differ:
 - A later release may destroy a read binding. That is normal when a consumer image
   rotates. See *Apply a later release* in `PARTNER_GUIDE.md`.
 
-## Order that matters
+Adding a **fourth** consumer image is a code change here, not a dispatch input. The image
+names live in `partner/verify-image.sh` and in a validation in `partner/variables.tf`.
 
-Do not release before the image builds emit attestations. The dispatch proves every pair,
-so a digest built without provenance stops the release. That refusal is correct.

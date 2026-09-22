@@ -80,7 +80,11 @@ printf '%s\n' \
   "else. If a pin marked *unchanged* appears in your plan, or a resource is added or" \
   "destroyed that this table does not explain, stop and send us the plan."
 
-if [[ "$old_write" == "GRANTED" && "$new_write" == "frozen" ]]; then
+# The "exactly 2 destroys" promise holds only when nothing else moved. A release
+# that closes the ceremony window AND rotates an image destroys more than two, and
+# the partner is told to stop on any other count.
+if [[ "$old_write" == "GRANTED" && "$new_write" == "frozen" \
+      && "$(echo "${changed:-}" | tr -d ' ')" == "write-access" ]]; then
   printf '%s\n' \
     "" \
     "This release closes the ceremony write window. Your plan shows exactly **2" \

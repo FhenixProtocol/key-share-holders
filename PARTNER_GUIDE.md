@@ -29,8 +29,8 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   flags this check needs were added; an older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
 - Network access from the machine that runs terraform to `api.github.com`,
-  `europe-west4-docker.pkg.dev` and Sigstore's public trust root. The proof is read
-  from the public record, not from us.
+  `europe-west4-docker.pkg.dev` and `tuf-repo-cdn.sigstore.dev` (Sigstore's public trust
+  root). The proof is read from the public record, not from us.
 
 ## 2. Create your Terraform state bucket
 
@@ -111,7 +111,8 @@ attested_readers = {
 }
 ```
 
-A **ceremony** release differs in one place. The comment above is replaced by:
+A **ceremony** release differs in one place. The `# Not a ceremony release` line is
+replaced by:
 
 ```hcl
 # Ceremony release: our enclave may add ONE version to each secret.
@@ -129,8 +130,7 @@ not come from the commit beside it fails your plan, and nothing is written.
 To run the same check by hand:
 
 ```bash
-cd partner           # from the repo root, where step 3 left you
-./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+./partner/verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
 # FAIL means: change nothing, send us the output.
 ```
 
@@ -176,7 +176,7 @@ This binds two **Google-predefined** roles to our operator group in your project
 **These are Google roles, not roles that we made.** Check them in the Google
 documentation. Do not accept our description of them. Both roles apply to this project
 only. `-var grant_view_access=false` removes them for that command only. To revoke for
-good, set `grant_view_access = false` in your `terraform.tfvars`.
+good, set `grant_view_access = false` in your `access/terraform.tfvars`.
 
 > **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
 > apply. See *Why we do not ask for more* under Reference.
@@ -214,7 +214,7 @@ Plan: 15 to add, 0 to change, 0 to destroy.      # 17 for a ceremony release
   # google_iam_workload_identity_pool_provider      -> "cofhe-tee-keygen-provider"
   # google_iam_workload_identity_pool.reader_pool   -> "cofhe-tee-reader-pool"
   # google_iam_workload_identity_pool_provider.reader -> "teecryptor-reader", "zee-k-reader"
-  # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2)
+  # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2, ceremony release only)
   # google_secret_manager_secret_iam_member.attested_read  -> secretAccessor      (x2)
 
 Changes to Outputs:
@@ -346,9 +346,8 @@ that line. You check it out and apply. This removes the write binding.
 git fetch --tags && git checkout <post-ceremony-tag>
 grep grant_write_access ../values.tfvars   # expect: no match
 
-# 1b. re-run init. Releases from 2026-09 on use one more provider for the
-#     provenance check, and plan fails until you do. It is safe to run at any
-#     time and changes no infrastructure.
+# 1b. re-run init. A release may add a provider, and plan fails until you do.
+#     It is safe to run at any time and changes no infrastructure.
 terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/partner"
@@ -416,6 +415,7 @@ Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
 **What you run.** Five minutes, from your existing clone:
 
 ```bash
+cd <your clone of key-share-holders>
 git fetch --tags && git checkout <new-tag>
 git status --porcelain              # expect: no output
 
@@ -440,7 +440,8 @@ Per changed pin:
 | What changed | What the plan shows |
 |---|---|
 | a consumer image (teecryptor, zee-k) | 1 change (its gate) + 1 destroy and 1 add (its read binding) |
-| the keygen image | 1 change (the write gate) |
+| the keygen image | 1 change (the write gate). While a ceremony window is open, also 1 destroy and 1 add per secret: the write bindings embed the keygen digest too |
+| a ceremony window opening | 2 adds (the write bindings) |
 | a ceremony window closing | 2 destroys (the write bindings), nothing added |
 
 For the three-image example above, expect **2 to add, 3 to change, 2 to destroy**. Match
@@ -466,9 +467,15 @@ Then run the `verify/` check from step 6 again, and send us the output.
 - **Never** apply a configuration file that did not arrive through the agreed channel.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
-  the read set. The network continues while enough partners remain. Use it with
-  care, and tell us. A revoke skips the provenance check, so the brake works even when
-  GitHub is unreachable.
+  the read set. The network continues while enough partners remain. Use it with care,
+  and tell us. A revoke skips the provenance check, so the brake works even when GitHub
+  is unreachable. From your clone, in `partner/`:
+  ```bash
+  terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+    -var grant_read_access=false
+  ```
+  That lasts one command. The next apply without it restores read access. To keep it off,
+  set `grant_read_access = false` in your own `partner/terraform.tfvars`.
 
 ## Ongoing commitment
 
@@ -476,7 +483,7 @@ Then run the `verify/` check from step 6 again, and send us the output.
 |---|---|---|
 | Onboarding | This page, one time | 1 to 2 hours |
 | Directly after the ceremony | Freeze write access again (step 11) | 5 minutes |
-| Each Fhenix release | Check out the new tag and apply. See *Apply a later release* below. | 5 minutes |
+| Each Fhenix release | Check out the new tag and apply. See *Apply a later release* above. | 5 minutes |
 | Always | Keep the project and Secret Manager available. Google manages both. No on-call. | — |
 
 ## Reference
@@ -501,7 +508,7 @@ trust, from our public history.
 
 ### Why we do not ask for more
 
-The Terraform in step 5 needs `secretmanager.secrets.setIamPolicy`. It sets IAM on each
+The Terraform in `partner/` needs `secretmanager.secrets.setIamPolicy`. It sets IAM on each
 secret; that is its job. A holder of this permission can give read access on a secret to
 itself, then read it. Two partner shares are sufficient to reconstruct the key.
 
@@ -548,12 +555,12 @@ gcloud logging read \
 ### The same checks by hand
 
 If you prefer not to use `verify/`, these `gcloud` commands do the same checks. Put
-the three digests from your expected-values sheet into the first three lines. The
+the three digests from `EXPECTED.md` at the tag into the first three lines. The
 script prints `OK` or `FAIL` for each gate. You do not compare anything by eye.
 
 ```bash
 PROJ=<your-project>
-KEYGEN_DIGEST=sha256:…      # from the expected-values sheet
+KEYGEN_DIGEST=sha256:…      # from EXPECTED.md at the tag
 TC_DIGEST=sha256:…
 ZK_DIGEST=sha256:…
 

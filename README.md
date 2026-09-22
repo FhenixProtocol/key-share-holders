@@ -15,7 +15,7 @@ see how the files you apply are produced.
 ## How a release works
 
 A release is a **tag**. Each tag carries one `values.tfvars` at the repository root. It holds the shared
-values of that release: the Fhenix compute project and the three image digests. The file is overwritten by every release; the tag is what makes a version
+values of that release: the Fhenix compute project, the three image digests, and the commit each image was built from. The file is overwritten by every release; the tag is what makes a version
 retrievable.
 
 ```bash
@@ -48,7 +48,7 @@ CHANGELOG.md       one entry per tag: what changed, which digests
 values.tfvars      the shared values of the current release (added at the first real release)
 EXPECTED.md        what your plan and verify must show for those values
 access/            step 4 — gives Fhenix READ-ONLY visibility in your project
-partner/           steps 4 to 6 — your two secrets and the attestation gates on them
+partner/           steps 5 to 6 — your two secrets and the attestation gates on them
   verify-image.sh  proves a digest came from the commit beside it, before it is pinned
                    (SLSA build provenance; needs gh, jq and curl, no GitHub account)
   provenance.tf    runs that proof on every plan and apply. A failure stops the run.
@@ -94,7 +94,7 @@ cd access && terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" -backend-config="prefix=cofhe-tdx-keygen/access" \
   && terraform apply -var="partner_project_id=<your-project>"
 
-# steps 4 to 6
+# steps 5 to 6
 cd ../partner && terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" -backend-config="prefix=cofhe-tdx-keygen/partner" \
   && terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project> \
