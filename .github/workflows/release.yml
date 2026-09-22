@@ -235,7 +235,10 @@ jobs:
             word='GRANTED - this is a ceremony release'
             ceremony_bool='true'
           else
-            echo '# Not a ceremony release: write access stays frozen (module default).' > grant.txt
+            # Nothing. The module default is false, and a var-file cannot enforce
+            # it anyway: -var wins over -var-file. A comment claiming otherwise
+            # would be a promise this file cannot keep.
+            : > grant.txt
             word='frozen'
             ceremony_bool='false'
           fi
@@ -315,7 +318,7 @@ jobs:
           if [[ "$CEREMONY" == "true" ]]; then
             ceremony_line='**Ceremony release** - write access is granted for this apply.'
           else
-            ceremony_line='Not a ceremony release - write access stays frozen.'
+            ceremony_line='Not a ceremony release.'
           fi
           printf '%s\n' \
             "## $TAG - $(date -u +%Y-%m-%d)" \

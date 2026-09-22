@@ -46,8 +46,13 @@ plan must show those CHANGED rows taking effect and nothing else.
 
 A changed **consumer** digest (teecryptor, zee-k) shows as 1 change plus 1 destroy and
 1 add: its read binding names the digest inside the member string, which cannot be
-edited, so the binding is replaced. A changed **keygen** digest shows as 1 change. Those
-destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
+edited, so the binding is replaced.
+
+A changed **keygen** digest shows as 1 change while write access is frozen. During a
+ceremony window it also destroys and adds the write binding, for the same reason: that
+binding names the digest too.
+
+Those destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
 
 ## Your verify run
 
