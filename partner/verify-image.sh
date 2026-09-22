@@ -113,6 +113,19 @@ for tool in gh jq curl; do
     || die "${tool} is not installed. See PARTNER_GUIDE.md, step 1."
 done
 
+# --source-ref and --source-digest arrived in gh 2.68.0. An older gh exits with
+# "unknown flag", which this script would otherwise report as a failed proof.
+# Name the real problem instead.
+gh_version="$(gh --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+gh_major="${gh_version%%.*}"
+gh_rest="${gh_version#*.}"
+gh_minor="${gh_rest%%.*}"
+if [ -z "${gh_version}" ] \
+  || [ "${gh_major}" -lt 2 ] \
+  || { [ "${gh_major}" -eq 2 ] && [ "${gh_minor}" -lt 68 ]; }; then
+  die "gh ${gh_version:-(unknown)} is too old. This check needs gh 2.68 or later, which is where --source-digest was added. Upgrade gh, then run this again."
+fi
+
 say "Verifying ${IMAGE}"
 say "  image   ${REGISTRY}@${DIGEST}"
 say "  commit  ${COMMIT}"
@@ -123,8 +136,17 @@ say ""
 # .json or .jsonl, so this cannot be a bare mktemp file.
 workdir="$(mktemp -d)"
 trap 'rm -rf "${workdir}"' EXIT
-bundle="${workdir}/bundle.json"
+bundle="${workdir}/bundle.jsonl"
 response="${workdir}/response.json"
+
+# gh resolves the image through the DEFAULT DOCKER KEYCHAIN. A partner who has
+# ever run `gcloud auth configure-docker` has a credential helper in
+# ~/.docker/config.json, and a stale token there makes gh fail before it checks
+# anything — which this script would report as a failed proof. Point gh at an
+# empty config so the image is always fetched anonymously, which is what the
+# public registry allows anyway.
+mkdir -p "${workdir}/docker"
+export DOCKER_CONFIG="${workdir}/docker"
 
 # Fetched anonymously. This endpoint needs no GitHub account, which is what
 # keeps the check independent of any credential we could hand you.
@@ -145,7 +167,10 @@ if [ "${http}" != "200" ]; then
   exit 1
 fi
 
-jq -e '.attestations[0].bundle' < "${response}" > "${bundle}" 2>/dev/null \
+# EVERY bundle, as JSON Lines, not just the first. The API may return several
+# attestations for one digest, and gh picks the one that satisfies the flags.
+# Taking [0] blindly would turn "wrong element" into "the proof does not hold".
+jq -ce '.attestations[].bundle' < "${response}" > "${bundle}" 2>/dev/null \
   || die "the attestation response was not in the expected form. Send this to Fhenix."
 
 # Every flag below is an assertion. gh exits non-zero if any one of them does

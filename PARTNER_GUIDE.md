@@ -23,11 +23,11 @@ call with you.
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
 
 - `terraform` 1.9 or later, and `gcloud`.
-- `gh` 2.60 or later, plus `jq` and `curl`. Your apply uses them to prove where each
+- `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses them to prove where each
   image came from, before it pins anything. Install with `brew install gh jq`, or see
-  https://github.com/cli/cli#installation. Check with `gh --version`.
+  https://github.com/cli/cli#installation. Check with `gh --version`. 2.68 is where the
+  flags this check needs were added; an older `gh` stops with a clear message.
   **You do not need a GitHub account and you do not need to run `gh auth login`.**
-  The check reads a public API and verifies offline.
 - Network access from the machine that runs terraform to `api.github.com`,
   `europe-west4-docker.pkg.dev` and Sigstore's public trust root. The proof is read
   from the public record, not from us.
@@ -150,13 +150,12 @@ not come from the commit beside it fails your plan, and nothing is written.
 To run the same check by hand:
 
 ```bash
-cd partner
+cd ../partner        # from access/, where step 3 left you
 ./verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
 # FAIL means: change nothing, send us the output.
 ```
 
-The same check runs inside your `plan` and `apply`, so this is only for when you want
-to see it on its own.
+`plan` runs the same check.
 
 Your own project id is **not** in that file, and is in no file. You pass it with
 `-var partner_project_id=<your-project>` on every command below.
@@ -165,7 +164,8 @@ There is no other read path. Each read of your share goes through these gates. T
 module has no input that gives read access to a person or to a service account.
 
 > **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
-> attested workload in our project can then write to your secrets. Terraform rejects a
+> attested workload in our project can then write to your secrets, and the provenance
+> check on that image is skipped too. Terraform rejects a
 > value that is not `sha256:` plus 64 lowercase hex characters. A cut-off paste fails
 > with an error. It does not weaken the gate.
 
@@ -179,10 +179,11 @@ terraform init -reconfigure -input=false \
   && terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 ```
 
-**Correct result:** about fifteen resources to add. Zero to change. Zero to destroy.
+**Correct result:** 15 resources to add, or **17 for a ceremony release** — the two
+extra are the `secretVersionAdder` bindings. Zero to change. Zero to destroy.
 
 ```
-Plan: 15 to add, 0 to change, 0 to destroy.
+Plan: 15 to add, 0 to change, 0 to destroy.      # 17 for a ceremony release
 
   # google_project_service.apis            -> secretmanager, iam, iamcredentials, sts, cloudresourcemanager
   # google_project_iam_audit_config.secretmanager   -> Data Access logs for Secret Manager
@@ -193,7 +194,13 @@ Plan: 15 to add, 0 to change, 0 to destroy.
   # google_iam_workload_identity_pool_provider.reader -> "teecryptor-reader", "zee-k-reader"
   # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2)
   # google_secret_manager_secret_iam_member.attested_read  -> secretAccessor      (x2)
+
+Changes to Outputs:
+  + provenance_verified = { keygen = {...}, teecryptor = {...}, zee-k = {...} }
 ```
+
+A passing provenance check prints nothing. That `provenance_verified` block is how you
+know it ran, and it names the commit proven for each image.
 
 > **Stop and contact us** if you see one of these:
 > - a *destroy* count that is not zero;
@@ -204,7 +211,11 @@ Plan: 15 to add, 0 to change, 0 to destroy.
 > - the question *"Do you want to migrate all workspaces to gcs?"* (answer **no**;
 >   on a new setup this question must not appear).
 >
-> The resource count can differ by one or two. A **destroy** must not appear.
+> A **destroy** must not appear.
+
+If the plan stops with `External Program Execution Failed` on `verify-image.sh`, the
+proof did not hold and nothing was written. Change nothing. Do not edit a digest or a
+`source_sha` to make it pass. Send us the whole error.
 
 ## 6. Apply, then verify
 
@@ -249,8 +260,8 @@ Send us the message. Do not repair anything by hand.
 terraform output -json > <your-project>-outputs.json
 ```
 
-The file has four values: your project id, the two secret ids, and the audiences that
-our enclaves attest for. It has no secret material. We compare the project numbers in
+The file has five values: your project id, the two secret ids, the audiences that
+our enclaves attest for, and the proven digest and commit of each image. It has no secret material. We compare the project numbers in
 it with the numbers compiled into our images. If they differ, the rollout stops on our
 side, not on yours.
 
@@ -312,8 +323,8 @@ git fetch --tags && git checkout <post-ceremony-tag>
 grep grant_write_access ../values.tfvars   # expect: no match
 
 # 1b. re-run init. Releases from 2026-09 on use one more provider for the
-#     provenance check, and plan fails with "Missing required provider" without
-#     this. It is safe to run at any time and changes no infrastructure.
+#     provenance check, and plan fails until you do. It is safe to run at any
+#     time and changes no infrastructure.
 terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/partner"
@@ -392,10 +403,8 @@ It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
 A failure stops the run before any IAM changes. The check is a data source, so `-target`
 does not route around it.
 
-You trust the public record, not Fhenix. The attestation is fetched from an API that
-needs no account and verified against Sigstore's public trust root, so no Fhenix
-credential and no GitHub login are involved. It does not say the commit is one you
-approve of — you choose which of our commits you trust, from our public history.
+It does not say the commit is one you approve of. You choose which of our commits you
+trust, from our public history.
 
 ### What `verify/` checks
 

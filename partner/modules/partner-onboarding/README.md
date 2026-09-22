@@ -87,6 +87,11 @@ gcloud iam workload-identity-pools providers describe cofhe-tee-keygen-provider 
 
 ## Attested read access (partner-enforced)
 
+> The root passes a `source_sha` beside each `image_digest`. It is proof material for
+> the provenance gate in `partner/provenance.tf` and is stripped before it reaches this
+> module, because the CEL pins the digest only. That is why it does not appear below.
+
+
 `attested_readers` is the only read path. The **partner's own** IAM gates each read on
 the TDX Confidential Space attestation of the consumer. No service account is trusted.
 One entry per consumer:
