@@ -532,11 +532,11 @@ Then run the `verify/` check from step 6 again, and send us the output.
   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
     -var grant_read_access=false -var skip_provenance_check=true
   ```
-  Terraform refuses that flag on an apply that grants anything, so it can only ever
-  widen a revoke. Use it only when a check blocks an urgent revoke.
+  Use this flag only when a check blocks an urgent revoke. Terraform refuses it on any
+  apply that grants read or write access.
 
-  During a ceremony release, also pass `-var grant_write_access=false`. Terraform
-  refuses the flag on any apply that grants, and a ceremony `values.tfvars` grants write.
+  A ceremony release grants write access. During one, add `-var grant_write_access=false`
+  as well. That also closes the ceremony write window, so tell us at once.
 
   **That apply still writes the tag's digests into your gates, and it proves none of
   them.** No binding accompanies them, so nothing can read your share. Re-apply without

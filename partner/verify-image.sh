@@ -249,13 +249,8 @@ say ""
 #   --source-digest is the one that pins the exact commit.
 #   --cert-identity and --source-ref are FIXED here, not read from the
 #   attestation, so an image built from another branch cannot satisfy them.
-#
-# --cert-identity, NOT --signer-workflow. gh turns --signer-workflow into an
-# UNANCHORED prefix match on the certificate identity, so a shorter value passes
-# — the bare repository name passes. The assertion would then be "some workflow
-# in that repository", and a second workflow on main called
-# build-keygen-tdx.yml.yml would satisfy it. --cert-identity matches the whole
-# string, so the workflow file and the branch are both exact.
+#   --cert-identity, NOT --signer-workflow: gh makes that one an UNANCHORED
+#   prefix match, so even the bare repository name passes.
 if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
       --bundle "${bundle}" \
       --repo "${REPO}" \
