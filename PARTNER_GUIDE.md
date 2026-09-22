@@ -42,7 +42,9 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   tests our file against them.
 
 The release tag carries the signed attestation for every digest it pins, in
-`partner/bundles`. Your apply reads those files. It calls no GitHub API.
+`partner/bundles`. Your apply reads those files, so it calls no GitHub API. The one
+exception is a digest that the tag does not carry, which you only meet if you check an
+image by hand.
 
 We give you the file. This gives us no advantage. `gh` checks three things against the
 public trust roots above, which we do not control:
@@ -500,7 +502,7 @@ the plan against the **CHANGED** rows in `EXPECTED.md`. A resource that no row e
 still a reason to stop and send us the plan.
 
 Your plan also proves each new digest against its commit before it pins anything. That
-needs `gh`, `jq` and `curl` on this machine, as in step 1. If we ever add a tool, the
+needs `gh` on this machine, as in step 1. If we ever add a tool, the
 release notes say so.
 
 Then run the `verify/` check from step 6 again, and send us the output.
@@ -532,6 +534,10 @@ Then run the `verify/` check from step 6 again, and send us the output.
   ```
   Terraform refuses that flag on an apply that grants anything, so it can only ever
   widen a revoke. Use it only when a check blocks an urgent revoke.
+
+  **That apply still writes the tag's digests into your gates, and it proves none of
+  them.** No binding accompanies them, so nothing can read your share. Re-apply without
+  the flag when the hosts are reachable again. That proves the digests.
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
   **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the
