@@ -72,9 +72,10 @@ jobs:
               exit 1
             fi
           done
-          # The partner proves digest+commit together against the public Sigstore
-          # log before it pins anything. A short SHA does not satisfy cosign, so
-          # reject one here rather than at the partner's plan.
+          # The partner proves digest+commit together against the public
+          # attestation before it pins anything. A short SHA never matches the
+          # attested source digest, so reject one here rather than at the
+          # partner's plan.
           for c in "$KEYGEN_SHA" "$TEECRYPTOR_SHA" "$ZEEK_SHA"; do
             if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
               echo "::error::not a full 40-hex commit sha: '$c'"

@@ -11,8 +11,9 @@
 # You can run the same check by hand:
 #   ./verify-image.sh keygen <digest> <commit>
 #
-# This needs `cosign` on the machine that runs terraform, plus network access to
-# the public log. See PARTNER_GUIDE.md step 1.
+# This needs `gh`, `jq` and `curl` on the machine that runs terraform, plus
+# network access to api.github.com and the image registry. No GitHub account is
+# required. See PARTNER_GUIDE.md step 1.
 #
 # NOTE: the commit stops here. It is proof material only. The CEL pins the
 # digest and nothing else, so `source_sha` is never passed into the onboarding
