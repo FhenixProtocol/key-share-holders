@@ -142,7 +142,18 @@ export DOCKER_CONFIG="${workdir}/docker"
 
 # Fetched anonymously. This endpoint needs no GitHub account, which is what
 # keeps the check independent of any credential we could hand you.
+#
+# A token is used only if the environment already has one. That never happens on
+# a partner machine; it happens on our own CI, where the anonymous limit of 60
+# requests an hour per IP address is shared with every other runner.
+auth=()
+token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -n "${token}" ]; then
+  auth=(-H "Authorization: Bearer ${token}")
+fi
+# ${auth[@]+...} because bash 3.2 errors on an empty array under `set -u`.
 http="$(curl -sS -w '%{http_code}' -o "${response}" \
+  ${auth[@]+"${auth[@]}"} \
   "https://api.github.com/repos/${REPO}/attestations/${DIGEST}" || true)"
 
 if [ "${http}" = "404" ]; then

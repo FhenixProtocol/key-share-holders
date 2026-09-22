@@ -40,12 +40,21 @@ locals {
     },
   )
 
-  # The check exists to stop you TRUSTING a digest you have not proven. Setting
-  # grant_read_access = false is the emergency brake: it removes your share from
-  # the read set and trusts nothing new. That path must work when GitHub is
-  # unreachable, or the brake fails exactly when you need it. So a revoke skips
-  # the check. Every apply that grants or keeps access still runs it.
-  pinned_images = var.grant_read_access ? local.all_pinned_images : {}
+  # Prove a digest exactly when this apply GRANTS something to it. That keeps two
+  # properties at once:
+  #
+  #  - Nothing is ever granted to an unproven image. The keygen digest is proven
+  #    whenever the write binding is created, and each reader digest whenever its
+  #    secretAccessor binding is created.
+  #  - The emergency brake works offline. `grant_read_access = false` with write
+  #    already frozen grants nothing, so it needs no check and no network.
+  #
+  # A CEL that pins an unproven digest but has no binding grants nothing, which is
+  # why gating on the grant flags is enough.
+  pinned_images = merge(
+    var.grant_write_access ? { for k, v in local.all_pinned_images : k => v if k == "keygen" } : {},
+    var.grant_read_access ? { for k, v in local.all_pinned_images : k => v if k != "keygen" } : {},
+  )
 }
 
 data "external" "provenance" {
