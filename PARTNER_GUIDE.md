@@ -175,7 +175,8 @@ This binds two **Google-predefined** roles to our operator group in your project
 
 **These are Google roles, not roles that we made.** Check them in the Google
 documentation. Do not accept our description of them. Both roles apply to this project
-only. `-var grant_view_access=false` removes them at any time.
+only. `-var grant_view_access=false` removes them for that command only. To revoke for
+good, set `grant_view_access = false` in your `terraform.tfvars`.
 
 > **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
 > apply. See *Why we do not ask for more* under Reference.
