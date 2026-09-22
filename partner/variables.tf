@@ -22,6 +22,43 @@ variable "image_digest" {
   type        = string
   default     = ""
   description = "Optional exact image pin (sha256:...). Empty = unpinned (early dev). Set to require a partner re-apply on every keygen image rebuild."
+
+  # Caught here, with a readable message. Without it a truncated paste reaches
+  # the provenance check and fails as an opaque external-program error.
+  validation {
+    condition     = var.image_digest == "" || can(regex("^sha256:[0-9a-f]{64}$", var.image_digest))
+    error_message = "image_digest must be empty, or \"sha256:\" plus 64 lowercase hex characters."
+  }
+}
+
+variable "skip_provenance_check" {
+  type    = bool
+  default = false
+  # EMERGENCY USE ONLY, and only together with grant_read_access = false. The
+  # provenance check needs api.github.com, the image registry and Sigstore's
+  # trust root. If you must revoke while any of those is unreachable, this turns
+  # the check off for that apply. It is visible in your plan and it is never part
+  # of a normal apply. Never pass it to grant or to re-pin anything.
+  description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when GitHub is unreachable. Never use it on an apply that grants or re-pins."
+}
+
+variable "source_sha" {
+  type        = string
+  default     = ""
+  description = "Full 40-hex commit that the keygen image_digest was built from. Checked against the public Sigstore log before anything is pinned (see provenance.tf). It is NEVER written into the CEL. Leave empty only while image_digest is empty."
+
+  validation {
+    condition     = var.source_sha == "" || can(regex("^[0-9a-f]{40}$", var.source_sha))
+    error_message = "source_sha must be empty, or a full 40-character lowercase hex commit SHA. The short form is not enough."
+  }
+
+  # A pinned digest with no commit would reach verify-image.sh as an empty
+  # string and fail there, as an opaque "external program exited with 1".
+  # Name the real problem here instead.
+  validation {
+    condition     = var.image_digest == "" || var.source_sha != ""
+    error_message = "image_digest is pinned, so source_sha must name the commit it was built from. The provenance gate cannot run without it."
+  }
 }
 
 variable "grant_write_access" {
@@ -34,10 +71,37 @@ variable "attested_readers" {
   type = map(object({
     gce_project_id = string
     image_digest   = string
+    source_sha     = string
     secret_id      = string
   }))
   default     = {}
-  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. Empty = no read path at all."
+  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. source_sha is the commit that digest was built from; it is proven before the apply and never enters the CEL. Empty map = no read path at all."
+
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^sha256:[0-9a-f]{64}$", r.image_digest))])
+    error_message = "every attested reader must pin \"sha256:\" plus 64 lowercase hex characters."
+  }
+
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[0-9a-f]{40}$", r.source_sha))])
+    error_message = "every attested reader must name the full 40-character lowercase hex commit its image was built from. The short form is not enough."
+  }
+
+  # provenance.tf merges the keygen write gate and these readers into one map of
+  # checks. A reader keyed "keygen" would win that merge and silently replace the
+  # write gate's check, so the keygen digest would never be proven.
+  validation {
+    condition     = !contains(keys(var.attested_readers), "keygen")
+    error_message = "\"keygen\" is reserved: it names the write gate in the provenance check. Use a different consumer key."
+  }
+
+  # The key is not a label. provenance.tf passes it to verify-image.sh as the
+  # image selector, so it must be one the script knows. A new consumer needs a
+  # new release of this repo, not just a new line in values.tfvars.
+  validation {
+    condition     = alltrue([for k in keys(var.attested_readers) : contains(["teecryptor", "zee-k"], k)])
+    error_message = "consumer keys must be \"teecryptor\" or \"zee-k\": the provenance check resolves each key to a known Fhenix image."
+  }
 }
 
 variable "grant_read_access" {

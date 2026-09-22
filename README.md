@@ -9,10 +9,13 @@ complete partner side.
 
 Read `PARTNER_GUIDE.md` first. The step numbers below refer to that guide.
 
+`RELEASING.md` is for Fhenix, not for you. It records how we cut a release, so you can
+see how the files you apply are produced.
+
 ## How a release works
 
 A release is a **tag**. Each tag carries one `values.tfvars` at the repository root. It holds the shared
-values of that release: the Fhenix compute project and the three image digests. The file is overwritten by every release; the tag is what makes a version
+values of that release: the Fhenix compute project, the three image digests, and the commit each image was built from. The file is overwritten by every release; the tag is what makes a version
 retrievable.
 
 ```bash
@@ -44,8 +47,11 @@ PARTNER_GUIDE.md   the onboarding guide. Start here.
 CHANGELOG.md       one entry per tag: what changed, which digests
 values.tfvars      the shared values of the current release (added at the first real release)
 EXPECTED.md        what your plan and verify must show for those values
-access/            step 3 — gives Fhenix READ-ONLY visibility in your project
-partner/           steps 4 to 6 — your two secrets and the attestation gates on them
+access/            step 4 — gives Fhenix READ-ONLY visibility in your project
+partner/           steps 5 to 6 — your two secrets and the attestation gates on them
+  verify-image.sh  proves a digest came from the commit beside it, before it is pinned
+                   (SLSA build provenance; needs gh, jq and curl, no GitHub account)
+  provenance.tf    runs that proof on every plan and apply. A failure stops the run.
   verify/          step 6 — read-only check of what landed (no resources)
   modules/partner-onboarding/   the module. partner/ is a thin root around it.
 ```
@@ -80,7 +86,7 @@ and then rejected it.
 # one time: state bucket in your project
 gcloud storage buckets create gs://<your-project>-tfstate --uniform-bucket-level-access
 
-# step 3: get the release, then grant read-only access
+# steps 3 and 4: get the release, then grant read-only access
 git clone https://github.com/FhenixProtocol/key-share-holders
 cd key-share-holders && git fetch --tags && git checkout <tag>
 
@@ -88,7 +94,7 @@ cd access && terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" -backend-config="prefix=cofhe-tdx-keygen/access" \
   && terraform apply -var="partner_project_id=<your-project>"
 
-# steps 4 to 6
+# steps 5 to 6
 cd ../partner && terraform init -reconfigure -input=false \
   -backend-config="bucket=<your-project>-tfstate" -backend-config="prefix=cofhe-tdx-keygen/partner" \
   && terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project> \

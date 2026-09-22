@@ -6,22 +6,37 @@ Do not edit by hand — the next release overwrites this file.
 Check every line below against your own `terraform plan` and your `verify/` output. If
 one string differs, stop and send us the output. Do not repair anything by hand.
 
+The **source commit** rows are the exception: they are proven by your plan rather than
+printed by it, and they never reach a CEL. Read them back with
+`terraform output provenance_verified`.
+
 | What | Expected |
 |---|---|
 | Fhenix compute project | `__COMPUTE_PROJECT__` |
 | keygen image digest (write gate) | `__KEYGEN_DIGEST__` |
+| keygen source commit | `__KEYGEN_SHA__` |
 | teecryptor image digest (read gate on `cofhe-tee-fhe-priv`) | `__TEECRYPTOR_DIGEST__` |
+| teecryptor source commit | `__TEECRYPTOR_SHA__` |
 | zee-k image digest (read gate on `cofhe-tee-zk-signer`) | `__ZEEK_DIGEST__` |
+| zee-k source commit | `__ZEEK_SHA__` |
 | write access | `__CEREMONY_WORD__` |
 
 __PREVIOUS_DIFF__
 
 ## Your plan
 
-If this is your **first** apply, expect about **15 to add, 0 to change, 0 to destroy**.
+If this is your **first** apply, expect **15 to add, 0 to change, 0 to destroy** — or
+**17** for a ceremony release, where the two extra are the `secretVersionAdder`
+bindings. Your plan also shows a `provenance_verified` output; that is the proof the
+provenance check ran.
 
 If you are **upgrading** from an earlier tag, the table above is the authority: your
 plan must show those CHANGED rows taking effect and nothing else.
+
+A changed **consumer** digest (teecryptor, zee-k) shows as 1 change plus 1 destroy and
+1 add: its read binding names the digest inside the member string, which cannot be
+edited, so the binding is replaced. A changed **keygen** digest shows as 1 change. Those
+destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
 
 ## Your verify run
 

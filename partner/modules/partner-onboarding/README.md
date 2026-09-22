@@ -1,7 +1,7 @@
 # partner-onboarding (Terraform module)
 
 This module is the **complete** partner side of CoFHE TEE key creation. A partner
-applies it one time. The apply gives our attested keygen enclave permission to write a
+applies it at onboarding, and again on each release. The apply gives our attested keygen enclave permission to write a
 key share into the partner's Secret Manager. A CEL on our attestation gates that write.
 **There is no service and no binary on the partner side. Onboarding is
 `terraform apply`.**
@@ -87,6 +87,10 @@ gcloud iam workload-identity-pools providers describe cofhe-tee-keygen-provider 
 
 ## Attested read access (partner-enforced)
 
+> The root passes a `source_sha` beside each `image_digest`. It is proof material for
+> the provenance gate in `partner/provenance.tf` and is stripped before it reaches this
+> module, because the CEL pins the digest only. That is why it does not appear below.
+
 `attested_readers` is the only read path. The **partner's own** IAM gates each read on
 the TDX Confidential Space attestation of the consumer. No service account is trusted.
 One entry per consumer:
@@ -124,7 +128,7 @@ action for each ceremony:
 grant_write_access = true    # ONLY for the apply before a key ceremony
 ```
 
-After the ceremony, remove the line (or apply again without it). This removes the
+After the ceremony, apply the post-ceremony tag: its `values.tfvars` does not carry the line. Partners never edit that file — see `PARTNER_GUIDE.md` step 11. This removes the
 `secretVersionAdder` binding. After that, a write attempt by our enclave fails with a
 permission error. The error is visible in our logs and in your audit log. It is never a
 silent success. The secret, its versions, and the pool and provider do not change. The

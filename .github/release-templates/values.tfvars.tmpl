@@ -6,8 +6,11 @@
 
 service_project_id = "__COMPUTE_PROJECT__"
 
-# Only this exact keygen image may WRITE your share.
+# Only this exact keygen image may WRITE your share. source_sha is the commit it
+# was built from: your apply proves the pair against the public Sigstore log
+# before it pins anything. The commit never enters the CEL.
 image_digest = "__KEYGEN_DIGEST__"
+source_sha   = "__KEYGEN_SHA__"
 
 __GRANT_WRITE_ACCESS__
 
@@ -16,11 +19,13 @@ attested_readers = {
   teecryptor = {
     gce_project_id = "__COMPUTE_PROJECT__"
     image_digest   = "__TEECRYPTOR_DIGEST__"
+    source_sha     = "__TEECRYPTOR_SHA__"
     secret_id      = "cofhe-tee-fhe-priv"
   }
   zee-k = {
     gce_project_id = "__COMPUTE_PROJECT__"
     image_digest   = "__ZEEK_DIGEST__"
+    source_sha     = "__ZEEK_SHA__"
     secret_id      = "cofhe-tee-zk-signer"
   }
 }

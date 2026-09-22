@@ -39,15 +39,18 @@ write_state() {
 changed=""
 unchanged=""
 rows=""
-for key in compute keygen teecryptor zee-k; do
+for key in compute keygen keygen-sha teecryptor teecryptor-sha zee-k zee-k-sha; do
   old="$(lookup "$key" /tmp/pins.prev)"
   new="$(lookup "$key" /tmp/pins.new)"
   case "$key" in
-    compute)    label="Fhenix compute project" ;;
-    keygen)     label="keygen (write gate)" ;;
-    teecryptor) label="teecryptor (read gate on cofhe-tee-fhe-priv)" ;;
-    zee-k)      label="zee-k (read gate on cofhe-tee-zk-signer)" ;;
-    *)          label="$key" ;;
+    compute)        label="Fhenix compute project" ;;
+    keygen)         label="keygen (write gate)" ;;
+    keygen-sha)     label="keygen source commit" ;;
+    teecryptor)     label="teecryptor (read gate on cofhe-tee-fhe-priv)" ;;
+    teecryptor-sha) label="teecryptor source commit" ;;
+    zee-k)          label="zee-k (read gate on cofhe-tee-zk-signer)" ;;
+    zee-k-sha)      label="zee-k source commit" ;;
+    *)              label="$key" ;;
   esac
   if [[ "$old" == "$new" ]]; then
     unchanged="$unchanged $key"
@@ -77,7 +80,11 @@ printf '%s\n' \
   "else. If a pin marked *unchanged* appears in your plan, or a resource is added or" \
   "destroyed that this table does not explain, stop and send us the plan."
 
-if [[ "$old_write" == "GRANTED" && "$new_write" == "frozen" ]]; then
+# The "exactly 2 destroys" promise holds only when nothing else moved. A release
+# that closes the ceremony window AND rotates an image destroys more than two, and
+# the partner is told to stop on any other count.
+if [[ "$old_write" == "GRANTED" && "$new_write" == "frozen" \
+      && "$(echo "${changed:-}" | tr -d ' ')" == "write-access" ]]; then
   printf '%s\n' \
     "" \
     "This release closes the ceremony write window. Your plan shows exactly **2" \

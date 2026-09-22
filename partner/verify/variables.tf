@@ -19,6 +19,11 @@ variable "image_digest" {
   default = ""
 }
 
+variable "source_sha" {
+  type    = string
+  default = ""
+}
+
 variable "grant_write_access" {
   type    = bool
   default = false
@@ -28,7 +33,10 @@ variable "attested_readers" {
   type = map(object({
     gce_project_id = string
     image_digest   = string
-    secret_id      = string
+    # optional(), so this root still runs against a var-file from before
+    # source_sha existed. It is unused here; the gate lives in ../provenance.tf.
+    source_sha = optional(string, "")
+    secret_id  = string
   }))
   default = {}
 }

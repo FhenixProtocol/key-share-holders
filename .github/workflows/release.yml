@@ -10,15 +10,32 @@ on:
       tag:
         description: "Release tag, e.g. v1.1.0"
         required: true
+      # Leave an image empty to carry its pin forward from the previous release.
+      # Fill in only what this release moves. The first release needs all six.
       keygen_digest:
-        description: "keygen image digest (sha256:...)"
-        required: true
+        description: "keygen image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
+      keygen_sha:
+        description: "keygen source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       teecryptor_digest:
-        description: "teecryptor image digest (sha256:...)"
-        required: true
+        description: "teecryptor image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
+      teecryptor_sha:
+        description: "teecryptor source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       zeek_digest:
-        description: "zee-k image digest (sha256:...)"
-        required: true
+        description: "zee-k image digest (sha256:...) — empty = unchanged"
+        required: false
+        default: ""
+      zeek_sha:
+        description: "zee-k source commit (full 40-hex) — empty = unchanged"
+        required: false
+        default: ""
       ceremony:
         description: "Ceremony release - grants write access for the key ceremony"
         type: boolean
@@ -36,9 +53,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.tag }}
-      KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
-      TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
-      ZEEK_DIGEST: ${{ inputs.zeek_digest }}
+      IN_KEYGEN_DIGEST: ${{ inputs.keygen_digest }}
+      IN_KEYGEN_SHA: ${{ inputs.keygen_sha }}
+      IN_TEECRYPTOR_DIGEST: ${{ inputs.teecryptor_digest }}
+      IN_TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
+      IN_ZEEK_DIGEST: ${{ inputs.zeek_digest }}
+      IN_ZEEK_SHA: ${{ inputs.zeek_sha }}
       CEREMONY: ${{ inputs.ceremony }}
       COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
       GH_TOKEN: ${{ github.token }}
@@ -47,7 +67,85 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reject a malformed tag, digest or compute project
+      # An unchanged image should not be retyped. Retyping is how a digest and a
+      # commit drift apart, and the previous tag already holds the proven pair.
+      # Anything left empty is read back from that tag's values.tfvars.
+      - name: Resolve each pin, carrying forward what did not change
+        run: |
+          set -euo pipefail
+          # No pipe: `git tag | head` takes SIGPIPE on a repo with many tags, and
+          # `pipefail` turns that into a silent abort with no output at all.
+          prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
+          prev_file=""
+          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
+            prev_file=prev-values.tfvars
+          else
+            prev_tag=""
+          fi
+
+          # pins.awk prints "<key> <value>" for every pin in a rendered var-file.
+          lookup() {
+            [[ -n "$prev_file" ]] || return 0
+            awk -f .github/scripts/pins.awk "$prev_file" | awk -v k="$1" '$1 == k { print $2 }'
+          }
+
+          # Sets RESOLVED and ORIGIN. Called directly, never in a subshell, so a
+          # missing value stops the run here instead of rendering a broken file.
+          resolve() {
+            local label="$1" key="$2" supplied="$3"
+            if [[ -n "$supplied" ]]; then
+              RESOLVED="$supplied"; ORIGIN="supplied"; return 0
+            fi
+            RESOLVED="$(lookup "$key")"
+            if [[ -z "$RESOLVED" ]]; then
+              if [[ -n "$prev_tag" ]]; then
+                echo "::error::$label is empty, and $prev_tag does not carry it. Fill it in."
+              else
+                echo "::error::$label is empty and there is no previous release to carry it from. Fill it in."
+              fi
+              exit 1
+            fi
+            ORIGIN="carried from $prev_tag"
+          }
+
+          {
+            echo "| Pin | Value | Source |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          emit() {  # label, pins key, supplied value, env var name, digest|sha
+            resolve "$1" "$2" "$3"
+            case "$5" in
+              digest) [[ "$RESOLVED" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::$1 is not a canonical digest: '$RESOLVED'"; exit 1; } ;;
+              sha)    [[ "$RESOLVED" =~ ^[0-9a-f]{40}$ ]]        || { echo "::error::$1 is not a full 40-hex commit: '$RESOLVED'"; exit 1; } ;;
+            esac
+            echo "$4=$RESOLVED" >> "$GITHUB_ENV"
+            echo "| $1 | \`$RESOLVED\` | $ORIGIN |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          # 6. Half a pair is almost always a half-filled form. Carrying the old
+          # commit next to a new digest fails later as "the proof does not hold",
+          # which reads like a compromised image rather than a typo.
+          pair() {  # label, digest, sha
+            if [[ -n "$2" && -z "$3" ]] || [[ -z "$2" && -n "$3" ]]; then
+              echo "::error::fill both the digest and the commit for $1, or leave both empty to carry the pair forward."
+              exit 1
+            fi
+          }
+          pair keygen     "$IN_KEYGEN_DIGEST"     "$IN_KEYGEN_SHA"
+          pair teecryptor "$IN_TEECRYPTOR_DIGEST" "$IN_TEECRYPTOR_SHA"
+          pair zee-k      "$IN_ZEEK_DIGEST"       "$IN_ZEEK_SHA"
+
+          emit "keygen digest"     keygen         "$IN_KEYGEN_DIGEST"     KEYGEN_DIGEST     digest
+          emit "keygen commit"     keygen-sha     "$IN_KEYGEN_SHA"        KEYGEN_SHA        sha
+          emit "teecryptor digest" teecryptor     "$IN_TEECRYPTOR_DIGEST" TEECRYPTOR_DIGEST digest
+          emit "teecryptor commit" teecryptor-sha "$IN_TEECRYPTOR_SHA"    TEECRYPTOR_SHA    sha
+          emit "zee-k digest"      zee-k          "$IN_ZEEK_DIGEST"       ZEEK_DIGEST       digest
+          emit "zee-k commit"      zee-k-sha      "$IN_ZEEK_SHA"          ZEEK_SHA          sha
+
+          rm -f prev-values.tfvars
+
+      - name: Reject a malformed tag, digest, commit or compute project
         run: |
           set -euo pipefail
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -60,6 +158,16 @@ jobs:
               exit 1
             fi
           done
+          # The partner proves digest+commit together against the public
+          # attestation before it pins anything. A short SHA never matches the
+          # attested source digest, so reject one here rather than at the
+          # partner's plan.
+          for c in "$KEYGEN_SHA" "$TEECRYPTOR_SHA" "$ZEEK_SHA"; do
+            if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::not a full 40-hex commit sha: '$c'"
+              exit 1
+            fi
+          done
           if [[ -z "$COMPUTE_PROJECT" ]]; then
             echo "::error::repository variable FHENIX_COMPUTE_PROJECT is not set"
             exit 1
@@ -68,6 +176,21 @@ jobs:
             echo "::error::tag $TAG already exists; a tag is never moved"
             exit 1
           fi
+
+      # The same check every partner's apply runs. A correctly shaped but wrong
+      # source_sha passes the regex above, ships in the tag, and then fails at
+      # EVERY partner with "DO NOT PIN THIS DIGEST" — one typo, N incidents.
+      # The runner has gh, jq and curl. FHENIX_PROVENANCE_TOKEN lifts the anonymous
+      # 60/hour limit, which GitHub-hosted runners share by IP. The script uses
+      # that name, not GITHUB_TOKEN, so a partner's ambient token never applies.
+      - name: Prove each digest came from the commit beside it
+        env:
+          FHENIX_PROVENANCE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
+          partner/verify-image.sh teecryptor "$TEECRYPTOR_DIGEST" "$TEECRYPTOR_SHA"
+          partner/verify-image.sh zee-k      "$ZEEK_DIGEST"       "$ZEEK_SHA"
 
       - name: Render values.tfvars and EXPECTED.md
         run: |
@@ -89,8 +212,11 @@ jobs:
             sed -e "s|__TAG__|$TAG|g" \
                 -e "s|__COMPUTE_PROJECT__|$COMPUTE_PROJECT|g" \
                 -e "s|__KEYGEN_DIGEST__|$KEYGEN_DIGEST|g" \
+                -e "s|__KEYGEN_SHA__|$KEYGEN_SHA|g" \
                 -e "s|__TEECRYPTOR_DIGEST__|$TEECRYPTOR_DIGEST|g" \
+                -e "s|__TEECRYPTOR_SHA__|$TEECRYPTOR_SHA|g" \
                 -e "s|__ZEEK_DIGEST__|$ZEEK_DIGEST|g" \
+                -e "s|__ZEEK_SHA__|$ZEEK_SHA|g" \
                 -e "s|__CEREMONY_WORD__|$word|g" \
                 -e "s|__CEREMONY_BOOL__|$ceremony_bool|g" \
                 "$1"
@@ -102,7 +228,7 @@ jobs:
             > values.tfvars
           # Compare against the previous tag so EXPECTED.md states the exact
           # before/after, not just a shape. Pure git - no credentials needed.
-          prev_tag="$(git tag --sort=-v:refname | head -1)"
+          prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
           prev_file=""
           if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
             prev_file=prev-values.tfvars
@@ -133,6 +259,18 @@ jobs:
           terraform fmt -check -diff values.tfvars
           terraform -chdir=partner init -backend=false -input=false
           terraform -chdir=partner validate
+          # `validate` ignores var-files, so evaluate the rendered one against the
+          # real variable declarations. This catches a field renamed on one side
+          # of the boundary, and exercises every `validation` block.
+          #
+          # `console` refuses to run without an initialised backend, and this repo
+          # configures a gcs backend it has no credentials for. A local-backend
+          # override gives console what it needs and touches no committed file.
+          printf 'terraform {\n  backend "local" {}\n}\n' > partner/zz_console_override.tf
+          terraform -chdir=partner init -input=false > /dev/null
+          echo 'var.attested_readers' \
+            | terraform -chdir=partner console -var-file=../values.tfvars -var partner_project_id=render-check
+          rm -f partner/zz_console_override.tf
           # A real `plan` needs GCP credentials, which this repo deliberately has
           # none of. The var-file is proved against a live project by the partner,
           # and by the Fhenix re-apply of staging from the tag - not here.
@@ -150,11 +288,11 @@ jobs:
             "" \
             "$ceremony_line" \
             "" \
-            "| Image | Digest |" \
-            "|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "| Image | Digest | Source commit |" \
+            "|---|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" > entry.md
           awk 'NR==FNR { e = e $0 ORS; next }
                !done && /^## / { printf "%s", e; done = 1 }
@@ -169,11 +307,11 @@ jobs:
             "Rendered by \`release.yml\`. Merging this PR tags \`main\` as \`$TAG\`" \
             "and creates the GitHub Release." \
             "" \
-            "| Image | Digest |" \
-            "|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` |" \
+            "| Image | Digest | Source commit |" \
+            "|---|---|---|" \
+            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
+            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
+            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" \
             "Ceremony: \`$CEREMONY\`. Compute project: \`$COMPUTE_PROJECT\`." \
             "" \
