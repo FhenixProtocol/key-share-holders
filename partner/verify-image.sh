@@ -143,10 +143,12 @@ export DOCKER_CONFIG="${workdir}/docker"
 # Fetched anonymously. This endpoint needs no GitHub account, which is what
 # keeps the check independent of any credential we could hand you.
 #
-# Deliberately NOT GITHUB_TOKEN or GH_TOKEN. Those are commonly exported on a
-# developer machine, and an expired one turns a working check into a permanent
-# 401 with advice that never helps. Only our own CI sets the name below, to lift
-# the anonymous limit of 60 requests an hour per IP address.
+# Optional, and never required. It only raises the anonymous limit of 60 requests
+# an hour per IP address, which a shared office network can exhaust.
+#
+# Deliberately NOT GITHUB_TOKEN or GH_TOKEN: those are commonly exported on a
+# developer machine, and an expired one would turn a working check into a
+# permanent 401 with advice that never helps.
 auth=()
 if [ -n "${FHENIX_PROVENANCE_TOKEN:-}" ]; then
   auth=(-H "Authorization: Bearer ${FHENIX_PROVENANCE_TOKEN}")
@@ -180,7 +182,8 @@ if [ "${http}" != "200" ]; then
   if [ "${http}" = "403" ] || [ "${http}" = "429" ]; then
     printf '%s\n' "GitHub is rate-limiting this address. The anonymous limit is 60" >&2
     printf '%s\n' "requests an hour per IP, and it is shared by everyone behind your" >&2
-    printf '%s\n' "network address. Wait, then run the same command again." >&2
+    printf '%s\n' "network address. Wait, then run the same command again, or set" >&2
+    printf '%s\n' "FHENIX_PROVENANCE_TOKEN to any GitHub token to raise the limit." >&2
   elif [ "${http}" = "000" ]; then
     printf '%s\n' "api.github.com could not be reached at all. Check the network, a" >&2
     printf '%s\n' "proxy, or a firewall rule. See PARTNER_GUIDE.md, step 1." >&2

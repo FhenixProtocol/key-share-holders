@@ -32,6 +32,17 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
   `europe-west4-docker.pkg.dev` and `tuf-repo-cdn.sigstore.dev` (Sigstore's public trust
   root). The proof is read from the public record, not from us.
 
+> **If the check reports `COULD NOT CHECK … HTTP 403`,** GitHub is rate-limiting your
+> address. The anonymous limit is 60 requests an hour per IP, shared by everyone behind
+> it. Wait and run it again, or pass any GitHub token to raise the limit:
+>
+> ```bash
+> FHENIX_PROVENANCE_TOKEN=<token> terraform apply …
+> ```
+>
+> A token is never required. It only raises the limit, and it changes nothing about what
+> is proven.
+
 ## 2. Create your Terraform state bucket
 
 ```bash
