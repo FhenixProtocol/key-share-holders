@@ -247,12 +247,19 @@ say ""
 # Every flag below is an assertion. gh exits non-zero if any one of them does
 # not match the certificate in the attestation.
 #   --source-digest is the one that pins the exact commit.
-#   --source-ref and --signer-workflow are FIXED here, not read from the
+#   --cert-identity and --source-ref are FIXED here, not read from the
 #   attestation, so an image built from another branch cannot satisfy them.
+#
+# --cert-identity, NOT --signer-workflow. gh turns --signer-workflow into an
+# UNANCHORED prefix match on the certificate identity, so a shorter value passes
+# — the bare repository name passes. The assertion would then be "some workflow
+# in that repository", and a second workflow on main called
+# build-keygen-tdx.yml.yml would satisfy it. --cert-identity matches the whole
+# string, so the workflow file and the branch are both exact.
 if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
       --bundle "${bundle}" \
       --repo "${REPO}" \
-      --signer-workflow "${SIGNER_WORKFLOW}" \
+      --cert-identity "https://github.com/${SIGNER_WORKFLOW}@${REF}" \
       --source-ref "${REF}" \
       --source-digest "${COMMIT}" 2>&1)"; then
   say "PASS — our workflow built this digest from commit ${COMMIT}."
