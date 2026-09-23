@@ -143,6 +143,8 @@ documentation. Do not accept our description of them.
 > **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
 > apply. See *Why we do not ask for more* under Reference.
 
+**Grant the two roles:**
+
 ```bash
 cd access
 terraform init -reconfigure -input=false \
@@ -152,7 +154,7 @@ terraform init -reconfigure -input=false \
 # `operators` defaults to ["group:protocol@fhenix.io"]
 ```
 
-Check what we hold, at any time:
+**Check what we hold, at any time:**
 
 ```bash
 gcloud projects get-iam-policy <your-project> \
