@@ -55,25 +55,8 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
-You can test that claim. Set `FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads
-the attestation from GitHub instead of reading our file:
-
-```bash
-FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
-```
-
-> **You can check a digest that the tag does not carry.** You examine an image by hand.
-> Then the script downloads the attestation from `api.github.com` instead.
-> A `COULD NOT CHECK … HTTP 403` then means GitHub limits requests from your address. The anonymous
-> limit is 60 requests an hour for each IP address. Everyone behind your address shares
-> that limit. Wait and run the command again, or pass any GitHub token to raise the limit:
->
-> ```bash
-> FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
-> ```
->
-> A token is never required. It only raises the limit, and it changes nothing about what
-> is proven.
+You can test that claim yourself once you have the clone. See *Check our files against
+GitHub* at the end of step 3.
 
 ## 2. Create your Terraform state bucket
 
@@ -179,6 +162,28 @@ Your own project id is **not** in that file, and is in no file. You pass it with
 There is no other read path. Each read of your share goes through these gates. The
 module has no input that gives read access to a person or to a service account.
 
+### Check our files against GitHub
+
+The tag carries our copy of each attestation. You do not have to take it. Set
+`FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads the attestation from GitHub
+instead:
+
+```bash
+FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
+```
+
+That path calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
+requests from your address. The anonymous limit is 60 requests an hour for each IP
+address, and everyone behind your address shares it. Wait and run it again, or pass any
+GitHub token to raise the limit:
+
+```bash
+FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
+```
+
+A token is never required. It only raises the limit, and it changes nothing about what is
+proven.
+
 > **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
 > attested workload in our project can then write to your secrets, and the provenance
 > check on that image is skipped too. Terraform rejects a
@@ -238,6 +243,10 @@ terraform init -reconfigure -input=false \
   && terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 ```
 
+> `Failed to get existing workspaces: querying Cloud Storage failed` means your
+> credentials expired, not a wrong bucket. Run `gcloud auth application-default login`.
+> Those are separate from `gcloud auth login`.
+
 **Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
 added if you apply with `-var grant_write_access=true`, which we ask for only around a
 key ceremony.
@@ -296,9 +305,17 @@ terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 ```
 
+`verify/` is a separate Terraform root, so it needs its own `init`. Run that line every
+time you come back to it, including in step 11. It holds no state, which is why
+`-backend=false` is safe.
+
 `verify/` is read-only. It has no resources. It reads the gates and the secret
 permissions that are now live in your project. It compares them with the
 `values.tfvars` of the tag you applied. (The list of checks is under *Reference*, at the end.)
+
+**Run this every time, even after a successful apply.** Terraform sees only the bindings
+it created. Any other binding on your secrets survives every apply, and `verify/` is the
+only step that finds one.
 
 **Success:** a `SUCCESS` block, and nothing else.
 
@@ -337,9 +354,13 @@ side, not on yours.
 *(We cannot read your Terraform state. The viewer roles have no storage permissions.
 You send this file; we do not fetch it.)*
 
-## 8. Before the ceremony
+## 8. Open the write window
 
-Check that both secrets are empty. Then tell us that you are ready:
+**Do this only when we ask.** We ask once, and the request names this step. It may arrive
+together with the instruction that sent you here, or later. Nothing in this guide ever
+asks for write access a second time.
+
+First check that both secrets are still empty:
 
 ```bash
 gcloud secrets versions list cofhe-tee-fhe-priv  --project=<your-project>
@@ -347,7 +368,8 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 # expect: Listed 0 items.
 ```
 
-We then ask you to open the write window. It is one apply, with one extra flag:
+If either is not empty, stop and tell us. Then open the window — one apply, one extra
+flag:
 
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
@@ -355,8 +377,11 @@ terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project
 # Plan: 2 to add, 0 to change, 0 to destroy.   # the two secretVersionAdder bindings
 ```
 
-Step 11 closes it again. **We never ask for this flag at any other time.** If a request
-for it does not come with a scheduled ceremony, stop and call us.
+Tell us when it is applied. Step 11 closes it again, and that is your last action.
+
+> **This is the only flag we will ever ask you to pass.** A request for
+> `grant_write_access=true` that did not come from us, or that arrives after the ceremony
+> is done, is not legitimate. Stop and call us.
 
 ## 9. During the ceremony
 
