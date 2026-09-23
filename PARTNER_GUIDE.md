@@ -175,13 +175,8 @@ terraform init -reconfigure -input=false \
   && terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 ```
 
-> `Failed to get existing workspaces: querying Cloud Storage failed` means your
-> credentials expired, not a wrong bucket. Run `gcloud auth application-default login`.
-> Those are separate from `gcloud auth login`.
-
 **Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
-added if you apply with `-var grant_write_access=true`, which we ask for only around a
-key ceremony.
+added if you apply with `-var grant_write_access=true`, which we ask for once, in step 8.
 
 ```
 Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=true
@@ -203,21 +198,29 @@ Changes to Outputs:
 A passing provenance check prints nothing. That `provenance_verified` block is how you
 know it ran, and it names the commit proven for each image.
 
-> **Stop and contact us** if you see one of these:
+> **Stop and contact us** if your plan shows one of these:
 > - a *destroy* count that is not zero;
 > - a `google_storage_bucket`;
 > - a resource in a project that is not yours;
 > - fewer than two secrets;
-> - an `attested_read` binding on the wrong secret;
-> - the question *"Do you want to migrate all workspaces to gcs?"* (answer **no**;
->   on a new setup this question must not appear).
+> - an `attested_read` binding on the wrong secret.
 >
-> On this **first** apply a destroy must not appear: there is nothing yet to destroy.
-> A later release may legitimately destroy a read binding when an image rotates. See
+> On this first run a destroy must not appear: there is nothing yet to destroy. A later
+> release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-If the plan stops with `External Program Execution Failed` on `verify-image.sh`, read
-the last lines of the output. The script says which of two things happened:
+### If something goes wrong
+
+**`init` asks "Do you want to migrate all workspaces to gcs?"** — answer **no**. On a new
+setup that question must not appear at all, and answering it wrongly overwrites state.
+`-input=false` in the command above makes `init` fail instead of asking.
+
+**`init` fails with `Failed to get existing workspaces: querying Cloud Storage failed`** —
+your credentials expired. It is not a wrong bucket name. Run `gcloud auth
+application-default login`. Those are separate from `gcloud auth login`.
+
+**`plan` stops with `External Program Execution Failed` on `verify-image.sh`** — read the
+last lines. The script says which of two things happened:
 
 - **`FAIL`** — the proof does not hold. Change nothing. Do not edit a digest or a
   `source_sha` to make it pass. Send us the whole error.
