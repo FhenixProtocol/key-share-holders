@@ -269,7 +269,7 @@ only step that finds one.
 `write_access_granted` is `false` here. It becomes `true` only between steps 8 and 11.
 
 **If you see that block, you are done here — go on to step 7.** The rest of this step is
-for when you do not.
+troubleshooting.
 
 **Failure:** one or more errors. Each error ends with a `CHECK FAILED:` line.
 
