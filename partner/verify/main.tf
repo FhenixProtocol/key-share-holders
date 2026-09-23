@@ -1,9 +1,9 @@
-# Post-apply verification — READ-ONLY.
+# Post-apply verification. READ-ONLY.
 #
 # This root has no `resource` blocks. `terraform plan` here reads the LIVE state of
 # the partner project (the deployed CELs and the IAM policy on each secret) and
 # asserts it against the same var-file that was applied. A failed assertion is a
-# hard error with a message; success is "No changes" — it never creates anything.
+# hard error with a message; success is "No changes". It never creates anything.
 #
 #   terraform -chdir=verify init -backend=false -input=false
 #   terraform -chdir=verify plan -input=false \
@@ -78,7 +78,7 @@ data "google_secret_manager_secret_iam_policy" "secret" {
   secret_id = each.key
 
   lifecycle {
-    # Every member on the secret must be an attested principalSet — never a person
+    # Every member on the secret must be an attested principalSet, never a person
     # or a service account.
     postcondition {
       condition = alltrue([

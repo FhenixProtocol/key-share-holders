@@ -1,6 +1,6 @@
 terraform {
   required_version = ">= 1.9"
-  # Remote state in the PARTNER's OWN project bucket — one bucket per partner, not
+  # Remote state in the PARTNER's OWN project bucket: one bucket per partner, not
   # a shared per-env bucket (the env buckets hold only `service` and
   # `keygen-project`). Bucket + prefix are passed at init (partial config):
   #   terraform init -reconfigure \
@@ -18,7 +18,7 @@ provider "google" {
   project = var.partner_project_id
 }
 
-# Partner stack — a thin root that invokes the reusable partner-onboarding
+# Partner stack: a thin root that invokes the reusable partner-onboarding
 # module. This is exactly what a real partner would run: point the module at our
 # service project, apply, and hand back the outputs. Kept as a single instance
 # here (<your-project>); the module itself is partner-agnostic.

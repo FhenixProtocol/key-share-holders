@@ -57,7 +57,17 @@ for key in compute keygen keygen-sha teecryptor teecryptor-sha zee-k zee-k-sha; 
 done
 
 printf '%s\n' "## What changes from $prev_tag" ""
-printf 'Changed: %s\n\n' "$(echo "${changed:-nothing}" | sed 's/^ //; s/ /, /g')"
+if [[ -z "$changed" ]]; then
+  # A docs-only release. Nobody had applied the previous tag when this shipped, so
+  # say who the section is for; "Changed: nothing" alone reads as a missed step.
+  printf '%s\n' \
+    "Changed: nothing. Only the documentation changed in this release." \
+    "" \
+    "If this is your first apply, ignore this section: the table above is what you check." \
+    ""
+else
+  printf 'Changed: %s\n\n' "$(echo "$changed" | sed 's/^ //; s/ /, /g')"
+fi
 printf '%s\n' "| Pin | $prev_tag | $new_tag | |" "|---|---|---|---|"
 printf '%s' "$rows"
 printf '%s\n' \

@@ -1,4 +1,4 @@
-# Partner Dev — Initialization
+# Partner Dev: Initialization
 
 You check out the release tag we send you. It already carries the configuration file.
 You apply. This creates two Secret Manager entries and the IAM rules that decide
@@ -8,7 +8,7 @@ You apply. This creates two Secret Manager entries and the IAM rules that decide
 call with you.
 
 > **We send you one thing: a release tag in this repository.**
-> The tag carries everything — the Terraform, this guide, the `values.tfvars` with
+> The tag carries everything: the Terraform, this guide, the `values.tfvars` with
 > every shared value already filled in, and the `EXPECTED.md` that lists the exact
 > strings your checks must show. Every partner gets the same tag.
 >
@@ -55,25 +55,9 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
-You can test that claim. Set `FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads
-the attestation from GitHub instead of reading our file:
-
-```bash
-FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
-```
-
-> **You can check a digest that the tag does not carry.** You examine an image by hand.
-> Then the script downloads the attestation from `api.github.com` instead.
-> A `COULD NOT CHECK … HTTP 403` then means GitHub limits requests from your address. The anonymous
-> limit is 60 requests an hour for each IP address. Everyone behind your address shares
-> that limit. Wait and run the command again, or pass any GitHub token to raise the limit:
->
-> ```bash
-> FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
-> ```
->
-> A token is never required. It only raises the limit, and it changes nothing about what
-> is proven.
+You do not have to take our copy. *Check a digest yourself*, under **Reference**, fetches
+the same attestation from GitHub instead. It is optional: your apply proves the images
+either way.
 
 ## 2. Create your Terraform state bucket
 
@@ -112,83 +96,54 @@ The two commands above check what you will apply. This one checks what we publis
 
 ### What the release carries
 
-Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
-plan and your `verify/` run must show.
+Four things, at the root of the clone:
 
-The tag also carries `partner/bundles`: one signed attestation for each pinned digest.
-Your apply reads those files. You do not touch them. See `partner/bundles/README.md`. Read
-`partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
-partner side. There is no binary and no service in this design.
+- **`EXPECTED.md`**: every value this release pins, and what your `plan` and your
+  `verify/` run must show. This is the file you check against.
+- **`values.tfvars`**: the shared values themselves. You pass it with `-var-file`; you do
+  not edit it, and the `git status --porcelain` above already proves it is byte-identical
+  to what we tagged. Your own project id is **not** in it, and is in no file. You pass
+  that with `-var partner_project_id=<your-project>` on every command below.
+- **`partner/bundles/`**: one signed attestation for each pinned digest. Your apply reads
+  them. You do not touch them. See `partner/bundles/README.md`.
+- **`partner/modules/partner-onboarding/`**: the module itself. Read its README before you
+  apply. This module *is* the partner side: there is no binary and no service in this
+  design.
 
-`values.tfvars` at the root holds the shared values. You do not edit it. We generate it,
-so it looks exactly like this, comments and all:
-
-```hcl
-# Shared values for release v1.2.0. Rendered by .github/workflows/release.yml.
-# Do not edit by hand — the next release overwrites this file.
-#
-# Your own project is NOT here. Pass it on the command line:
-#   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
-
-service_project_id = "fhenix-compute-project"
-
-# Only this exact keygen image may WRITE your share. source_sha is the commit it
-# was built from: your apply proves the pair against the public Sigstore log
-# before it pins anything. The commit never enters the CEL.
-image_digest = "sha256:1111…"
-source_sha   = "84028ad…"
-
-# Only these exact consumer images may READ your share — each on ONE secret.
-attested_readers = {
-  teecryptor = {
-    gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:2222…"
-    source_sha     = "9d20cf4…"
-    secret_id      = "cofhe-tee-fhe-priv"
-  }
-  zee-k = {
-    gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:3333…"
-    source_sha     = "397eca5…"
-    secret_id      = "cofhe-tee-zk-signer"
-  }
-}
-```
-
-`values.tfvars` never grants write access. That is an apply-time flag, and it appears
-only around a key ceremony. See steps 8 to 11.
+`values.tfvars` never grants write access. That is an apply-time flag, and it appears only
+around a key ceremony. See steps 8 to 11.
 
 ### Where each image came from
 
-`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
-every digest against the public Sigstore log before anything is pinned. A digest that did
-not come from the commit beside it fails your plan, and nothing is written.
+`source_sha` is the commit each image was built from. Both `terraform plan` and
+`terraform apply` check the SLSA build provenance of every digest against the public
+Sigstore log, before anything is pinned. A digest that did not come from the commit beside
+it fails, and nothing is written. You do not have to do anything for this to happen.
 
-To run the same check by hand:
+To run that check on its own, see *Check a digest yourself* under **Reference**.
 
-```bash
-./partner/verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
-# FAIL means: change nothing, send us the output.
-```
-
-`plan` runs the same check.
-
-Your own project id is **not** in that file, and is in no file. You pass it with
-`-var partner_project_id=<your-project>` on every command below.
-
-There is no other read path. Each read of your share goes through these gates. The
+There is no other read path. Each read of your share goes through these gates, and the
 module has no input that gives read access to a person or to a service account.
-
-> **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
-> attested workload in our project can then write to your secrets, and the provenance
-> check on that image is skipped too. Terraform rejects a
-> value that is not `sha256:` plus 64 lowercase hex characters. A cut-off paste fails
-> with an error. It does not weaken the gate.
 
 ## 4. Give Fhenix read-only access
 
-With this access, we can check your configuration without a request to you. This
-applies to onboarding and to each release after it.
+With this access we can check your configuration without asking you. It applies to
+onboarding and to every release after it.
+
+Two **Google-predefined** roles, on this project only:
+
+| Role | What it permits | What it does not permit |
+|---|---|---|
+| `roles/secretmanager.viewer` | See that a version exists, and when. This shows us that a ceremony completed. | Read the value (`versions.access`). Change IAM. |
+| `roles/iam.workloadIdentityPoolViewer` | Read your deployed CEL. This shows us the digest pin. | Change anything. |
+
+**These are Google roles, not roles that we made.** Check them in the Google
+documentation. Do not accept our description of them.
+
+> **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
+> apply. See *Why we do not ask for more* under Reference.
+
+**Grant the two roles:**
 
 ```bash
 cd access
@@ -199,26 +154,7 @@ terraform init -reconfigure -input=false \
 # `operators` defaults to ["group:protocol@fhenix.io"]
 ```
 
-`-input=false` makes `init` fail instead of asking *"Do you want to migrate all
-workspaces to gcs?"*. That question must not appear on a new setup; answering it
-wrongly overwrites state. The `&&` stops `apply` from running after a failed `init`.
-
-This binds two **Google-predefined** roles to our operator group in your project:
-
-| Role | What it permits | What it does not permit |
-|---|---|---|
-| `roles/secretmanager.viewer` | See that a version exists, and when. This shows us that a ceremony completed. | Read the value (`versions.access`). Change IAM. |
-| `roles/iam.workloadIdentityPoolViewer` | Read your deployed CEL. This shows us the digest pin. | Change anything. |
-
-**These are Google roles, not roles that we made.** Check them in the Google
-documentation. Do not accept our description of them. Both roles apply to this project
-only. `-var grant_view_access=false` removes them for that command only. To revoke for
-good, set `grant_view_access = false` in your `access/terraform.tfvars`.
-
-> **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
-> apply. See *Why we do not ask for more* under Reference.
-
-Check what we hold, at any time:
+**Check what we hold, at any time:**
 
 ```bash
 gcloud projects get-iam-policy <your-project> \
@@ -227,6 +163,9 @@ gcloud projects get-iam-policy <your-project> \
 # expect ONLY: roles/secretmanager.viewer
 #              roles/iam.workloadIdentityPoolViewer
 ```
+
+To revoke, set `grant_view_access = false` in your `access/terraform.tfvars` and apply.
+Passing `-var grant_view_access=false` does the same for one command only.
 
 ## 5. Init and plan
 
@@ -239,8 +178,7 @@ terraform init -reconfigure -input=false \
 ```
 
 **Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
-added if you apply with `-var grant_write_access=true`, which we ask for only around a
-key ceremony.
+added if you apply with `-var grant_write_access=true`, which we ask for once, in step 8.
 
 ```
 Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=true
@@ -262,25 +200,36 @@ Changes to Outputs:
 A passing provenance check prints nothing. That `provenance_verified` block is how you
 know it ran, and it names the commit proven for each image.
 
-> **Stop and contact us** if you see one of these:
+> **If the plan succeeds but shows one of these, stop and contact us:**
 > - a *destroy* count that is not zero;
 > - a `google_storage_bucket`;
 > - a resource in a project that is not yours;
 > - fewer than two secrets;
-> - an `attested_read` binding on the wrong secret;
-> - the question *"Do you want to migrate all workspaces to gcs?"* (answer **no**;
->   on a new setup this question must not appear).
+> - an `attested_read` binding on the wrong secret.
 >
-> On this **first** apply a destroy must not appear: there is nothing yet to destroy.
-> A later release may legitimately destroy a read binding when an image rotates. See
+> On this first run a destroy must not appear: there is nothing yet to destroy. A later
+> release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-If the plan stops with `External Program Execution Failed` on `verify-image.sh`, read
-the last lines of the output. The script says which of two things happened:
+**If your plan matches, you are done here. Go on to step 6.** The rest of this step is
+troubleshooting.
 
-- **`FAIL`** — the proof does not hold. Change nothing. Do not edit a digest or a
+### If a command fails
+
+**`init` asks "Do you want to migrate all workspaces to gcs?"** Answer **no**. On a new
+setup that question must not appear at all, and answering it wrongly overwrites state.
+`-input=false` in the command above makes `init` fail instead of asking.
+
+**`init` fails with `Failed to get existing workspaces: querying Cloud Storage failed`.**
+Your credentials expired. It is not a wrong bucket name. Run `gcloud auth
+application-default login`. Those are separate from `gcloud auth login`.
+
+**`plan` stops with `External Program Execution Failed` on `verify-image.sh`.** Read the
+last lines. The script says which of two things happened:
+
+- **`FAIL`**: the proof does not hold. Change nothing. Do not edit a digest or a
   `source_sha` to make it pass. Send us the whole error.
-- **`COULD NOT CHECK`** — the check did not finish. This says nothing about the image.
+- **`COULD NOT CHECK`**: the check did not finish. This says nothing about the image.
   A host in the table in step 1 was not reachable, or a file in `partner/bundles` is
   damaged. Correct that, then run the plan again.
 
@@ -288,17 +237,28 @@ Nothing is written in either case.
 
 ## 6. Apply, then verify
 
+Apply:
+
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+```
 
+Then check what landed:
+
+```bash
 terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 ```
 
-`verify/` is read-only. It has no resources. It reads the gates and the secret
-permissions that are now live in your project. It compares them with the
-`values.tfvars` of the tag you applied. (The list of checks is under *Reference*, at the end.)
+`verify/` is read-only and creates nothing. It reads the gates and the secret permissions
+now live in your project, and compares them with the `values.tfvars` you applied. The full
+list of checks is under *Reference*.
+
+**Run it every time, even after a successful apply.** Terraform sees only the bindings it
+created. Any other binding on your secrets survives every apply, and `verify/` is the only
+step that finds one. It is a separate root, so it needs its own `init` each time,
+including in step 11.
 
 **Success:** a `SUCCESS` block, and nothing else.
 
@@ -307,9 +267,14 @@ permissions that are now live in your project. It compares them with the
       + partner_project      = "<your-project>"
       + write_gate_pins      = "sha256:…"
       + read_gates_pin       = { teecryptor = "sha256:…", zee-k = "sha256:…" }
-      + write_access_granted = true
+      + write_access_granted = false
     }
 ```
+
+`write_access_granted` is `false` here. It becomes `true` only between steps 8 and 11.
+
+**If you see that block, you are done here. Go on to step 7.** The rest of this step is
+troubleshooting.
 
 **Failure:** one or more errors. Each error ends with a `CHECK FAILED:` line.
 
@@ -329,17 +294,27 @@ Send us the message. Do not repair anything by hand.
 terraform output -json > <your-project>-outputs.json
 ```
 
-The file has five values: your project id, the two secret ids, the audiences that
-our enclaves attest for, and the proven digest and commit of each image. It has no secret material. We compare the project numbers in
-it with the numbers compiled into our images. If they differ, the rollout stops on our
-side, not on yours.
+It holds no secret material. Five values:
+
+- your project id
+- the two secret ids
+- the audience our keygen enclave attests for
+- the audience each consumer enclave attests for
+- the proven digest and commit of each image
+
+We compare the project numbers in it with the numbers compiled into our images. If they
+differ, the rollout stops on our side, not on yours.
 
 *(We cannot read your Terraform state. The viewer roles have no storage permissions.
 You send this file; we do not fetch it.)*
 
-## 8. Before the ceremony
+## 8. Open the write window
 
-Check that both secrets are empty. Then tell us that you are ready:
+**Do this only when we ask.** We ask once, and the request names this step. It may arrive
+together with the instruction that sent you here, or later. Nothing in this guide ever
+asks for write access a second time.
+
+First check that both secrets are still empty:
 
 ```bash
 gcloud secrets versions list cofhe-tee-fhe-priv  --project=<your-project>
@@ -347,7 +322,9 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 # expect: Listed 0 items.
 ```
 
-We then ask you to open the write window. It is one apply, with one extra flag:
+If either is not empty, stop and tell us.
+
+Otherwise open the window. It is one apply, with one extra flag:
 
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
@@ -355,8 +332,11 @@ terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project
 # Plan: 2 to add, 0 to change, 0 to destroy.   # the two secretVersionAdder bindings
 ```
 
-Step 11 closes it again. **We never ask for this flag at any other time.** If a request
-for it does not come with a scheduled ceremony, stop and call us.
+Tell us when it is applied. Step 11 closes it again, and that is your last action.
+
+> **This is the only flag we will ever ask you to pass.** A request for
+> `grant_write_access=true` that did not come from us, or that arrives after the ceremony
+> is done, is not legitimate. Stop and call us.
 
 ## 9. During the ceremony
 
@@ -371,7 +351,7 @@ If you must use the emergency brake now, call us first. It stops the ceremony.
 completion only if each partner write was accepted. The final proof is our service: it
 starts and reconstructs the key. We tell you when this is done.
 
-If you want to see it yourself:
+Optional, if you want to see it yourself:
 
 ```bash
 # exactly one ENABLED version, created in the ceremony window
@@ -394,34 +374,42 @@ never a `user:` and never a `serviceAccount:`.
 ## 11. Freeze write access again
 
 One closing action: close the write window that the ceremony opened. Our write access is
-for bootstrap only. **The module default is frozen** (`grant_write_access = false`), so
-you close it by applying without the flag you used in step 8.
+for bootstrap only. The module default is `grant_write_access = false`, so you close the
+window by applying without the flag you used in step 8.
+
+Plan first. Expect exactly 2 destroys and nothing else:
 
 ```bash
-# 1. plan — expect EXACTLY 2 destroys, nothing else
 terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 #   Plan: 0 to add, 0 to change, 2 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-zk-signer"]
+```
 
-# 2. apply
+> If the plan destroys anything other than those two `attested_add` bindings, for example
+> a **secret** or an `attested_read` binding, **do not apply**. Contact us.
+
+Apply:
+
+```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+```
 
-# 3. check that both secrets are frozen — same check as step 6, now with no write binding
+Then check that both secrets are frozen. This is the step 6 check, now with no write
+binding:
+
+```bash
+terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 # success: a SUCCESS block with write_access_granted = false
-# failure: "CHECK FAILED: the share … is still writable" — send it to Fhenix
+# failure: "CHECK FAILED: the share ... is still writable". Send it to Fhenix
 ```
 
 > **Frozen is the default. If you forget this step, the result is safe.** The next apply
 > you run for any other reason closes the window, because you will not pass the flag
 > again. The old behaviour was the opposite: an absent flag gave write access back,
 > silently. That is why we changed the default.
-
-> If the plan in item 1 destroys anything other than the two `attested_add` bindings
-> (for example, a **secret** or an `attested_read` binding), **do not apply**.
-> Contact us.
 
 This is reversible. A future key rotation asks you for the flag again. Your read gates do
 not change. Decryption continues to work.
@@ -453,7 +441,6 @@ Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
 | teecryptor source commit | `9d20cf4…` | `c17ba39…` | **CHANGED** |
 | zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:cccc…` | **CHANGED** |
 | zee-k source commit | `397eca5…` | `e4d8812…` | **CHANGED** |
-| write access | frozen | frozen | unchanged |
 ```
 
 **What you run.** Five minutes, from your existing clone:
@@ -496,7 +483,8 @@ Your plan also proves each new digest against its commit before it pins anything
 needs `gh` on this machine, as in step 1. If we ever add a tool, the
 release notes say so.
 
-Then run the `verify/` check from step 6 again, and send us the output.
+Then run the `verify/` check from step 6 again, including its `init` line, and send us
+the output.
 
 ---
 
@@ -543,7 +531,7 @@ Then run the `verify/` check from step 6 again, and send us the output.
 | Onboarding | This page, one time | 1 to 2 hours |
 | Directly after the ceremony | Freeze write access again (step 11) | 5 minutes |
 | Each Fhenix release | Check out the new tag and apply. See *Apply a later release* above. | 5 minutes |
-| Always | Keep the project and Secret Manager available. Google manages both. No on-call. | — |
+| Always | Keep the project and Secret Manager available. Google manages both. No on-call. | none |
 
 ## Reference
 
@@ -611,6 +599,37 @@ gcloud logging read \
   --format='value(timestamp,protoPayload.authenticationInfo.principalSubject)'
 # expect only principal://…/workloadIdentityPools/cofhe-tee-reader-pool/… subjects
 ```
+
+### Check a digest yourself
+
+Optional. Your `plan` and `apply` already run this check, and stop if a digest did not
+come from the commit beside it. To run it on its own:
+
+```bash
+./partner/verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+```
+
+`FAIL` means: change nothing, send us the output.
+
+That reads our copy of the attestation, which ships in the tag. To fetch the same
+attestation from GitHub instead:
+
+```bash
+FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
+```
+
+Both check the same signature against the same public trust roots, so a pass means the
+same thing. Only the source of the file changes.
+
+The second form calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
+requests from your address: the anonymous limit is 60 an hour for each IP, shared by
+everyone behind it. Wait and run it again, or pass any GitHub token to raise the limit:
+
+```bash
+FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
+```
+
+A token is never required, and it changes nothing about what is proven.
 
 ### The same checks by hand
 

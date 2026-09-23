@@ -26,7 +26,7 @@
 }
 # Clear at the end of the BLOCK, never on one of its fields. Clearing on a field
 # makes the output depend on field order, and a reordered block would then print
-# nothing for the missed pin — which render-diff.sh reports as "unchanged".
+# nothing for the missed pin, which render-diff.sh reports as "unchanged".
 /^[[:space:]]+\}/ {
   consumer = ""
 }

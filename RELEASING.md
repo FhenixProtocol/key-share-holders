@@ -8,9 +8,9 @@ A release is one dispatch. You type no file by hand.
 
 Run the build workflow from `main` in each repo you are releasing:
 
-- [`cofhe-tdx-keygen`](https://github.com/FhenixProtocol/cofhe-tdx-keygen) — `build-keygen-tdx.yml`
-- [`teecryptor`](https://github.com/FhenixProtocol/teecryptor) — `build-teecryptor.yml`
-- [`zee-k-verifier`](https://github.com/FhenixProtocol/zee-k-verifier) — `build-zk-verifier-tdx.yml`
+- [`cofhe-tdx-keygen`](https://github.com/FhenixProtocol/cofhe-tdx-keygen): `build-keygen-tdx.yml`
+- [`teecryptor`](https://github.com/FhenixProtocol/teecryptor): `build-teecryptor.yml`
+- [`zee-k-verifier`](https://github.com/FhenixProtocol/zee-k-verifier): `build-zk-verifier-tdx.yml`
 
 The partner check names these exact workflow files. An image built by any other workflow
 in the same repo fails the proof.
@@ -45,7 +45,7 @@ The compute project is not a dispatch input. It comes from the repository variab
 The workflow then:
 
 - rejects a malformed tag, digest or commit, and a tag that exists
-- **proves each digest came from the commit beside it** — this catches a wrong commit
+- **proves each digest came from the commit beside it.** This catches a wrong commit
   here, once, instead of at every partner
 - commits each attestation in `partner/bundles`. A partner's apply then reads the proof
   from the tag, and calls no GitHub API
