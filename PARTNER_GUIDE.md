@@ -209,6 +209,9 @@ know it ran, and it names the commit proven for each image.
 > release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
+**If your plan matches, you are done here — go on to step 6.** The rest of this step is
+troubleshooting.
+
 ### If a command fails
 
 **`init` asks "Do you want to migrate all workspaces to gcs?"** — answer **no**. On a new
@@ -259,9 +262,14 @@ only step that finds one.
       + partner_project      = "<your-project>"
       + write_gate_pins      = "sha256:…"
       + read_gates_pin       = { teecryptor = "sha256:…", zee-k = "sha256:…" }
-      + write_access_granted = true
+      + write_access_granted = false
     }
 ```
+
+`write_access_granted` is `false` here. It becomes `true` only between steps 8 and 11.
+
+**If you see that block, you are done here — go on to step 7.** The rest of this step is
+for when you do not.
 
 **Failure:** one or more errors. Each error ends with a `CHECK FAILED:` line.
 
