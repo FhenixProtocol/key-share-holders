@@ -198,7 +198,7 @@ Changes to Outputs:
 A passing provenance check prints nothing. That `provenance_verified` block is how you
 know it ran, and it names the commit proven for each image.
 
-> **Stop and contact us** if your plan shows one of these:
+> **If the plan succeeds but shows one of these, stop and contact us:**
 > - a *destroy* count that is not zero;
 > - a `google_storage_bucket`;
 > - a resource in a project that is not yours;
@@ -209,7 +209,7 @@ know it ran, and it names the commit proven for each image.
 > release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-### If something goes wrong
+### If a command fails
 
 **`init` asks "Do you want to migrate all workspaces to gcs?"** — answer **no**. On a new
 setup that question must not appear at all, and answering it wrongly overwrites state.
