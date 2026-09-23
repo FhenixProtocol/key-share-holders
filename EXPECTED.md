@@ -1,7 +1,7 @@
-# Expected values — release v1.0.0
+# Expected values for release v1.0.1
 
 Rendered by `.github/workflows/release.yml` from the same inputs as `values.tfvars`.
-Do not edit by hand — the next release overwrites this file.
+Do not edit by hand. The next release overwrites this file.
 
 Check every line below against your own `terraform plan` and your `verify/` output. If
 one string differs, stop and send us the output. Do not repair anything by hand.
@@ -31,10 +31,25 @@ zee-k-291fcd710905cfc3b3ab1f0aa5a8fc062f6de9eb87a2f81674cfeab84bc5beec.jsonl
 Your apply reads those three files. It calls no GitHub API. If one is absent, the check
 downloads it from `api.github.com` instead, and the result is the same.
 
-## What changes from the previous release
+## What changes from v1.0.0
 
-This is the first release to carry a rendered `values.tfvars`. There is no
-earlier tag to compare against, so every pin in the table above is new to you.
+Changed: nothing. Only the documentation changed in this release.
+
+If this is your first apply, ignore this section: the table above is what you check.
+
+| Pin | v1.0.0 | v1.0.1 | |
+|---|---|---|---|
+| Fhenix compute project | `fhenix-mainnet` | `fhenix-mainnet` | unchanged |
+| keygen (write gate) | `sha256:78c1f33c60b1eb3a6d8ad657687c05708e44167b18bf599b08f4ab833a43519c` | `sha256:78c1f33c60b1eb3a6d8ad657687c05708e44167b18bf599b08f4ab833a43519c` | unchanged |
+| keygen source commit | `01652062b703ca19b11a9959155de9ae21697e21` | `01652062b703ca19b11a9959155de9ae21697e21` | unchanged |
+| teecryptor (read gate on cofhe-tee-fhe-priv) | `sha256:591d0046c306c5ce37c4c604d11b181de707698f2f9432648b16638912c49cfb` | `sha256:591d0046c306c5ce37c4c604d11b181de707698f2f9432648b16638912c49cfb` | unchanged |
+| teecryptor source commit | `c5168e102742a31e89ff8f1ca3bd7f98a8c466c9` | `c5168e102742a31e89ff8f1ca3bd7f98a8c466c9` | unchanged |
+| zee-k (read gate on cofhe-tee-zk-signer) | `sha256:291fcd710905cfc3b3ab1f0aa5a8fc062f6de9eb87a2f81674cfeab84bc5beec` | `sha256:291fcd710905cfc3b3ab1f0aa5a8fc062f6de9eb87a2f81674cfeab84bc5beec` | unchanged |
+| zee-k source commit | `f3382f20f23a64ae479bc8dfa8eb10990dd20424` | `f3382f20f23a64ae479bc8dfa8eb10990dd20424` | unchanged |
+
+Your plan must show exactly the **CHANGED** rows above taking effect, and nothing
+else. If a pin marked *unchanged* appears in your plan, or a resource is added or
+destroyed that this table does not explain, stop and send us the plan.
 
 ## Your plan
 

@@ -1,5 +1,5 @@
-# Shared values for release v1.0.0. Rendered by .github/workflows/release.yml.
-# Do not edit by hand — the next release overwrites this file.
+# Shared values for release v1.0.1. Rendered by .github/workflows/release.yml.
+# Do not edit by hand. The next release overwrites this file.
 #
 # Your own project is NOT here. Pass it on the command line:
 #   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
@@ -12,7 +12,7 @@ service_project_id = "fhenix-mainnet"
 image_digest = "sha256:78c1f33c60b1eb3a6d8ad657687c05708e44167b18bf599b08f4ab833a43519c"
 source_sha   = "01652062b703ca19b11a9959155de9ae21697e21"
 
-# Only these exact consumer images may READ your share — each on ONE secret.
+# Only these exact consumer images may READ your share, each on ONE secret.
 attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-mainnet"
