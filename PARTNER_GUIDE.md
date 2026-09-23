@@ -104,40 +104,11 @@ Your apply reads those files. You do not touch them. See `partner/bundles/README
 `partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
 partner side. There is no binary and no service in this design.
 
-`values.tfvars` at the root holds the shared values. You do not edit it. We generate it,
-so it looks exactly like this, comments and all:
+`values.tfvars` at the root holds the shared values. Open it — it is short, and every
+value in it also appears in `EXPECTED.md`, which is what you check your plan against.
 
-```hcl
-# Shared values for release v1.2.0. Rendered by .github/workflows/release.yml.
-# Do not edit by hand — the next release overwrites this file.
-#
-# Your own project is NOT here. Pass it on the command line:
-#   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
-
-service_project_id = "fhenix-compute-project"
-
-# Only this exact keygen image may WRITE your share. source_sha is the commit it
-# was built from: your apply proves the pair against the public Sigstore log
-# before it pins anything. The commit never enters the CEL.
-image_digest = "sha256:1111…"
-source_sha   = "84028ad…"
-
-# Only these exact consumer images may READ your share — each on ONE secret.
-attested_readers = {
-  teecryptor = {
-    gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:2222…"
-    source_sha     = "9d20cf4…"
-    secret_id      = "cofhe-tee-fhe-priv"
-  }
-  zee-k = {
-    gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:3333…"
-    source_sha     = "397eca5…"
-    secret_id      = "cofhe-tee-zk-signer"
-  }
-}
-```
+You do not edit it. You do not need to compare it against anything either: the
+`git status --porcelain` above already proves it is byte-identical to what we tagged.
 
 `values.tfvars` never grants write access. That is an apply-time flag, and it appears
 only around a key ceremony. See steps 8 to 11.
@@ -457,7 +428,6 @@ Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
 | teecryptor source commit | `9d20cf4…` | `c17ba39…` | **CHANGED** |
 | zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:cccc…` | **CHANGED** |
 | zee-k source commit | `397eca5…` | `e4d8812…` | **CHANGED** |
-| write access | frozen | frozen | unchanged |
 ```
 
 **What you run.** Five minutes, from your existing clone:
