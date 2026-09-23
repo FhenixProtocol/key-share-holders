@@ -237,25 +237,28 @@ Nothing is written in either case.
 
 ## 6. Apply, then verify
 
+Apply:
+
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+```
 
+Then check what landed:
+
+```bash
 terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 ```
 
-`verify/` is a separate Terraform root, so it needs its own `init`. Run that line every
-time you come back to it, including in step 11. It holds no state, which is why
-`-backend=false` is safe.
+`verify/` is read-only and creates nothing. It reads the gates and the secret permissions
+now live in your project, and compares them with the `values.tfvars` you applied. The full
+list of checks is under *Reference*.
 
-`verify/` is read-only. It has no resources. It reads the gates and the secret
-permissions that are now live in your project. It compares them with the
-`values.tfvars` of the tag you applied. (The list of checks is under *Reference*, at the end.)
-
-**Run this every time, even after a successful apply.** Terraform sees only the bindings
-it created. Any other binding on your secrets survives every apply, and `verify/` is the
-only step that finds one.
+**Run it every time, even after a successful apply.** Terraform sees only the bindings it
+created. Any other binding on your secrets survives every apply, and `verify/` is the only
+step that finds one. It is a separate root, so it needs its own `init` each time,
+including in step 11.
 
 **Success:** a `SUCCESS` block, and nothing else.
 
@@ -291,10 +294,16 @@ Send us the message. Do not repair anything by hand.
 terraform output -json > <your-project>-outputs.json
 ```
 
-The file has five values: your project id, the two secret ids, the audiences that
-our enclaves attest for, and the proven digest and commit of each image. It has no secret material. We compare the project numbers in
-it with the numbers compiled into our images. If they differ, the rollout stops on our
-side, not on yours.
+It holds no secret material. Five values:
+
+- your project id
+- the two secret ids
+- the audience our keygen enclave attests for
+- the audience each consumer enclave attests for
+- the proven digest and commit of each image
+
+We compare the project numbers in it with the numbers compiled into our images. If they
+differ, the rollout stops on our side, not on yours.
 
 *(We cannot read your Terraform state. The viewer roles have no storage permissions.
 You send this file; we do not fetch it.)*
@@ -313,8 +322,9 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 # expect: Listed 0 items.
 ```
 
-If either is not empty, stop and tell us. Then open the window. It is one apply, with
-one extra flag:
+If either is not empty, stop and tell us.
+
+Otherwise open the window. It is one apply, with one extra flag:
 
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
