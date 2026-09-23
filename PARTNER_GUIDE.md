@@ -351,7 +351,7 @@ If you must use the emergency brake now, call us first. It stops the ceremony.
 completion only if each partner write was accepted. The final proof is our service: it
 starts and reconstructs the key. We tell you when this is done.
 
-If you want to see it yourself:
+Optional, if you want to see it yourself:
 
 ```bash
 # exactly one ENABLED version, created in the ceremony window
@@ -374,34 +374,42 @@ never a `user:` and never a `serviceAccount:`.
 ## 11. Freeze write access again
 
 One closing action: close the write window that the ceremony opened. Our write access is
-for bootstrap only. **The module default is frozen** (`grant_write_access = false`), so
-you close it by applying without the flag you used in step 8.
+for bootstrap only. The module default is `grant_write_access = false`, so you close the
+window by applying without the flag you used in step 8.
+
+Plan first. Expect exactly 2 destroys and nothing else:
 
 ```bash
-# 1. plan: expect EXACTLY 2 destroys, nothing else
 terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 #   Plan: 0 to add, 0 to change, 2 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-zk-signer"]
+```
 
-# 2. apply
+> If the plan destroys anything other than those two `attested_add` bindings, for example
+> a **secret** or an `attested_read` binding, **do not apply**. Contact us.
+
+Apply:
+
+```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+```
 
-# 3. check that both secrets are frozen: same check as step 6, no write binding now
+Then check that both secrets are frozen. This is the step 6 check, now with no write
+binding:
+
+```bash
+terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 # success: a SUCCESS block with write_access_granted = false
-# failure: "CHECK FAILED: the share … is still writable". Send it to Fhenix
+# failure: "CHECK FAILED: the share ... is still writable". Send it to Fhenix
 ```
 
 > **Frozen is the default. If you forget this step, the result is safe.** The next apply
 > you run for any other reason closes the window, because you will not pass the flag
 > again. The old behaviour was the opposite: an absent flag gave write access back,
 > silently. That is why we changed the default.
-
-> If the plan in item 1 destroys anything other than the two `attested_add` bindings
-> (for example, a **secret** or an `attested_read` binding), **do not apply**.
-> Contact us.
 
 This is reversible. A future key rotation asks you for the flag again. Your read gates do
 not change. Decryption continues to work.
@@ -475,7 +483,8 @@ Your plan also proves each new digest against its commit before it pins anything
 needs `gh` on this machine, as in step 1. If we ever add a tool, the
 release notes say so.
 
-Then run the `verify/` check from step 6 again, and send us the output.
+Then run the `verify/` check from step 6 again, including its `init` line, and send us
+the output.
 
 ---
 
