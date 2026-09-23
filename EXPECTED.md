@@ -1,4 +1,4 @@
-# Expected values for release v1.0.1
+# Expected values for release v1.0.2
 
 Rendered by `.github/workflows/release.yml` from the same inputs as `values.tfvars`.
 Do not edit by hand. The next release overwrites this file.
@@ -31,13 +31,13 @@ zee-k-291fcd710905cfc3b3ab1f0aa5a8fc062f6de9eb87a2f81674cfeab84bc5beec.jsonl
 Your apply reads those three files. It calls no GitHub API. If one is absent, the check
 downloads it from `api.github.com` instead, and the result is the same.
 
-## What changes from v1.0.0
+## What changes from v1.0.1
 
 Changed: nothing. Only the documentation changed in this release.
 
 If this is your first apply, ignore this section: the table above is what you check.
 
-| Pin | v1.0.0 | v1.0.1 | |
+| Pin | v1.0.1 | v1.0.2 | |
 |---|---|---|---|
 | Fhenix compute project | `fhenix-mainnet` | `fhenix-mainnet` | unchanged |
 | keygen (write gate) | `sha256:78c1f33c60b1eb3a6d8ad657687c05708e44167b18bf599b08f4ab833a43519c` | `sha256:78c1f33c60b1eb3a6d8ad657687c05708e44167b18bf599b08f4ab833a43519c` | unchanged |
