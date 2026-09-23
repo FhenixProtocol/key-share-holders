@@ -96,44 +96,34 @@ The two commands above check what you will apply. This one checks what we publis
 
 ### What the release carries
 
-Read `EXPECTED.md` at the root. It lists every value this release pins, and what your
-plan and your `verify/` run must show.
+Four things, at the root of the clone:
 
-The tag also carries `partner/bundles`: one signed attestation for each pinned digest.
-Your apply reads those files. You do not touch them. See `partner/bundles/README.md`. Read
-`partner/modules/partner-onboarding/README.md` before you apply. This module *is* the
-partner side. There is no binary and no service in this design.
+- **`EXPECTED.md`** — every value this release pins, and what your `plan` and your
+  `verify/` run must show. This is the file you check against.
+- **`values.tfvars`** — the shared values themselves. You pass it with `-var-file`; you do
+  not edit it, and the `git status --porcelain` above already proves it is byte-identical
+  to what we tagged. Your own project id is **not** in it, and is in no file — you pass
+  that with `-var partner_project_id=<your-project>` on every command below.
+- **`partner/bundles/`** — one signed attestation for each pinned digest. Your apply reads
+  them. You do not touch them. See `partner/bundles/README.md`.
+- **`partner/modules/partner-onboarding/`** — the module itself. Read its README before you
+  apply. This module *is* the partner side: there is no binary and no service in this
+  design.
 
-`values.tfvars` at the root holds the shared values. Open it — it is short, and every
-value in it also appears in `EXPECTED.md`, which is what you check your plan against.
-
-You do not edit it. You do not need to compare it against anything either: the
-`git status --porcelain` above already proves it is byte-identical to what we tagged.
-
-`values.tfvars` never grants write access. That is an apply-time flag, and it appears
-only around a key ceremony. See steps 8 to 11.
+`values.tfvars` never grants write access. That is an apply-time flag, and it appears only
+around a key ceremony. See steps 8 to 11.
 
 ### Where each image came from
 
-`source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
-every digest against the public Sigstore log before anything is pinned. A digest that did
-not come from the commit beside it fails your plan, and nothing is written. You do not
-have to do anything for this to happen.
+`source_sha` is the commit each image was built from. Both `terraform plan` and
+`terraform apply` check the SLSA build provenance of every digest against the public
+Sigstore log, before anything is pinned. A digest that did not come from the commit beside
+it fails, and nothing is written. You do not have to do anything for this to happen.
 
-If you want to run that check on its own, see *Check a digest yourself* under
-**Reference**.
+To run that check on its own, see *Check a digest yourself* under **Reference**.
 
-Your own project id is **not** in that file, and is in no file. You pass it with
-`-var partner_project_id=<your-project>` on every command below.
-
-There is no other read path. Each read of your share goes through these gates. The
+There is no other read path. Each read of your share goes through these gates, and the
 module has no input that gives read access to a person or to a service account.
-
-> **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
-> attested workload in our project can then write to your secrets, and the provenance
-> check on that image is skipped too. Terraform rejects a
-> value that is not `sha256:` plus 64 lowercase hex characters. A cut-off paste fails
-> with an error. It does not weaken the gate.
 
 ## 4. Give Fhenix read-only access
 
