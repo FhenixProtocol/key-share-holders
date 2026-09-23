@@ -16,11 +16,20 @@ call with you.
 > your project. We check and we advise; you execute. This is by design. The Terraform
 > that sets the IAM on your secrets needs one permission
 > (`secretmanager.secrets.setIamPolicy`). The holder of that permission can give
-> read access on a share to itself. We do not take it. See step 4.
+> read access on a share to itself. We do not take it. See [step 4](#4-give-fhenix-read-only-access).
 
 ## 1. Prerequisites
 
 Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.gle/8XjawvVSWZSGCg45A
+
+**Set these two first.** Every command below uses them, so you substitute nothing by hand:
+
+```bash
+export PROJECT=<your GCP project id>
+export TAG=<the tag we sent you>        # for example v1.0.2
+```
+
+They live in your shell, so set them again in any new terminal.
 
 - `terraform` 1.9 or later, and `gcloud`.
 - `gh` **2.68** or later, plus `jq` and `curl`. Your apply uses `gh` to prove where each
@@ -55,15 +64,15 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
-You do not have to take our copy. *Check a digest yourself*, under **Reference**, fetches
+You do not have to take our copy. [Check a digest yourself](#check-a-digest-yourself) fetches
 the same attestation from GitHub instead. It is optional: your apply proves the images
 either way.
 
 ## 2. Create your Terraform state bucket
 
 ```bash
-gcloud storage buckets create gs://<your-project>-tfstate \
-  --project=<your-project> --uniform-bucket-level-access
+gcloud storage buckets create gs://$PROJECT-tfstate \
+  --project=$PROJECT --uniform-bucket-level-access
 ```
 
 ## 3. Get the release
@@ -74,22 +83,22 @@ we published. Everything from here on runs from inside this clone.
 ```bash
 git clone https://github.com/FhenixProtocol/key-share-holders
 cd key-share-holders
-git fetch --tags && git checkout <tag>
+git fetch --tags && git checkout $TAG
 ```
 
 Confirm you are on that tag, and that nothing is modified:
 
 ```bash
-git describe --tags --exact-match   # expect: the tag we sent you
+git describe --tags --exact-match   # expect: $TAG
 git status --porcelain              # expect: no output
 ```
 
-The GitHub Release page for the tag also carries the sha256 of its source tarball. You
-may compare it:
+The GitHub Release page for the tag also carries the sha256 of its source tarball. You may
+compare it:
 
 ```bash
-curl -sL https://github.com/FhenixProtocol/key-share-holders/archive/refs/tags/<tag>.tar.gz \
-  | shasum -a 256
+curl -fsSL "https://github.com/FhenixProtocol/key-share-holders/archive/refs/tags/$TAG.tar.gz" \
+  -o /tmp/src.tar.gz && shasum -a 256 /tmp/src.tar.gz
 ```
 
 The two commands above check what you will apply. This one checks what we published.
@@ -103,7 +112,7 @@ Four things, at the root of the clone:
 - **`values.tfvars`**: the shared values themselves. You pass it with `-var-file`; you do
   not edit it, and the `git status --porcelain` above already proves it is byte-identical
   to what we tagged. Your own project id is **not** in it, and is in no file. You pass
-  that with `-var partner_project_id=<your-project>` on every command below.
+  that with `-var partner_project_id=$PROJECT` on every command below.
 - **`partner/bundles/`**: one signed attestation for each pinned digest. Your apply reads
   them. You do not touch them. See `partner/bundles/README.md`.
 - **`partner/modules/partner-onboarding/`**: the module itself. Read its README before you
@@ -111,7 +120,7 @@ Four things, at the root of the clone:
   design.
 
 `values.tfvars` never grants write access. That is an apply-time flag, and it appears only
-around a key ceremony. See steps 8 to 11.
+around a key ceremony. See [step 8](#8-grant-write-access) to [step 11](#11-revoke-write-access).
 
 ### Where each image came from
 
@@ -120,7 +129,7 @@ around a key ceremony. See steps 8 to 11.
 Sigstore log, before anything is pinned. A digest that did not come from the commit beside
 it fails, and nothing is written. You do not have to do anything for this to happen.
 
-To run that check on its own, see *Check a digest yourself* under **Reference**.
+To run that check on its own, see [Check a digest yourself](#check-a-digest-yourself).
 
 There is no other read path. Each read of your share goes through these gates, and the
 module has no input that gives read access to a person or to a service account.
@@ -141,23 +150,23 @@ Two **Google-predefined** roles, on this project only:
 documentation. Do not accept our description of them.
 
 > **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
-> apply. See *Why we do not ask for more* under Reference.
+> apply. See [Why we do not ask for more](#why-we-do-not-ask-for-more).
 
 **Grant the two roles:**
 
 ```bash
 cd access
 terraform init -reconfigure -input=false \
-  -backend-config="bucket=<your-project>-tfstate" \
+  -backend-config="bucket=$PROJECT-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/access" \
-  && terraform apply -var="partner_project_id=<your-project>"
+  && terraform apply -var="partner_project_id=$PROJECT"
 # `operators` defaults to ["group:protocol@fhenix.io"]
 ```
 
 **Check what we hold, at any time:**
 
 ```bash
-gcloud projects get-iam-policy <your-project> \
+gcloud projects get-iam-policy $PROJECT \
   --flatten="bindings[].members" \
   --format="value(bindings.role,bindings.members)" | grep protocol@fhenix.io
 # expect ONLY: roles/secretmanager.viewer
@@ -172,13 +181,13 @@ Passing `-var grant_view_access=false` does the same for one command only.
 ```bash
 cd ../partner        # from access/, where step 4 left you
 terraform init -reconfigure -input=false \
-  -backend-config="bucket=<your-project>-tfstate" \
+  -backend-config="bucket=$PROJECT-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/partner" \
-  && terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
+  && terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
 **Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
-added if you apply with `-var grant_write_access=true`, which we ask for once, in step 8.
+added if you apply with `-var grant_write_access=true`, which we ask for once, in [step 8](#8-grant-write-access).
 
 ```
 Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=true
@@ -240,7 +249,7 @@ Nothing is written in either case.
 Apply:
 
 ```bash
-terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
 Then check what landed:
@@ -248,23 +257,23 @@ Then check what landed:
 ```bash
 terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
-  -var-file=../../values.tfvars -var partner_project_id=<your-project>
+  -var-file=../../values.tfvars -var partner_project_id=$PROJECT
 ```
 
 `verify/` is read-only and creates nothing. It reads the gates and the secret permissions
 now live in your project, and compares them with the `values.tfvars` you applied. The full
-list of checks is under *Reference*.
+list of checks is under [Reference](#reference).
 
 **Run it every time, even after a successful apply.** Terraform sees only the bindings it
 created. Any other binding on your secrets survives every apply, and `verify/` is the only
 step that finds one. It is a separate root, so it needs its own `init` each time,
-including in step 11.
+including in [step 11](#11-revoke-write-access).
 
 **Success:** a `SUCCESS` block, and nothing else.
 
 ```
   + SUCCESS = {
-      + partner_project      = "<your-project>"
+      + partner_project      = "$PROJECT"
       + write_gate_pins      = "sha256:…"
       + read_gates_pin       = { teecryptor = "sha256:…", zee-k = "sha256:…" }
       + write_access_granted = false
@@ -291,7 +300,7 @@ Send us the message. Do not repair anything by hand.
 `terraform output` writes to your terminal. Write it to a file and send the file:
 
 ```bash
-terraform output -json > <your-project>-outputs.json
+terraform output -json > $PROJECT-outputs.json
 ```
 
 It holds no secret material. Five values:
@@ -308,7 +317,7 @@ differ, the rollout stops on our side, not on yours.
 *(We cannot read your Terraform state. The viewer roles have no storage permissions.
 You send this file; we do not fetch it.)*
 
-## 8. Open the write window
+## 8. Grant write access
 
 **Do this only when we ask.** We ask once, and the request names this step. It may arrive
 together with the instruction that sent you here, or later. Nothing in this guide ever
@@ -317,22 +326,22 @@ asks for write access a second time.
 First check that both secrets are still empty:
 
 ```bash
-gcloud secrets versions list cofhe-tee-fhe-priv  --project=<your-project>
-gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
+gcloud secrets versions list cofhe-tee-fhe-priv  --project=$PROJECT
+gcloud secrets versions list cofhe-tee-zk-signer --project=$PROJECT
 # expect: Listed 0 items.
 ```
 
 If either is not empty, stop and tell us.
 
-Otherwise open the window. It is one apply, with one extra flag:
+Otherwise grant it. One apply, one extra flag:
 
 ```bash
-terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
   -var grant_write_access=true
 # Plan: 2 to add, 0 to change, 0 to destroy.   # the two secretVersionAdder bindings
 ```
 
-Tell us when it is applied. Step 11 closes it again, and that is your last action.
+Tell us when it is applied. Step 11 revokes it again, and that is your last action.
 
 > **This is the only flag we will ever ask you to pass.** A request for
 > `grant_write_access=true` that did not come from us, or that arrives after the ceremony
@@ -355,12 +364,12 @@ Optional, if you want to see it yourself:
 
 ```bash
 # exactly one ENABLED version, created in the ceremony window
-gcloud secrets versions list cofhe-tee-fhe-priv --project=<your-project> --limit=1
+gcloud secrets versions list cofhe-tee-fhe-priv --project=$PROJECT --limit=1
 
 # who wrote it
 gcloud logging read \
   'protoPayload.methodName="google.cloud.secretmanager.v1.SecretManagerService.AddSecretVersion"' \
-  --project=<your-project> --limit=5 \
+  --project=$PROJECT --limit=5 \
   --format='value(protoPayload.authenticationInfo.principalSubject,timestamp)'
 ```
 
@@ -371,16 +380,16 @@ never a `user:` and never a `serviceAccount:`.
 > share is useful only to the attested enclave. If you read it, you weaken the
 > guarantee that you give. We never ask you for it.
 
-## 11. Freeze write access again
+## 11. Revoke write access
 
-One closing action: close the write window that the ceremony opened. Our write access is
-for bootstrap only. The module default is `grant_write_access = false`, so you close the
-window by applying without the flag you used in step 8.
+One closing action: revoke the write access the ceremony needed. Our write access is for
+bootstrap only. The module default is `grant_write_access = false`, so you revoke it by
+applying without the flag you used in [step 8](#8-grant-write-access).
 
 Plan first. Expect exactly 2 destroys and nothing else:
 
 ```bash
-terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
+terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT
 #   Plan: 0 to add, 0 to change, 2 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-zk-signer"]
@@ -392,23 +401,22 @@ terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 Apply:
 
 ```bash
-terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
-Then check that both secrets are frozen. This is the step 6 check, now with no write
+Then check that write access is gone. This is the step 6 check, now with no write
 binding:
 
 ```bash
 terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
-  -var-file=../../values.tfvars -var partner_project_id=<your-project>
+  -var-file=../../values.tfvars -var partner_project_id=$PROJECT
 # success: a SUCCESS block with write_access_granted = false
 # failure: "CHECK FAILED: the share ... is still writable". Send it to Fhenix
 ```
 
-> **Frozen is the default. If you forget this step, the result is safe.** The next apply
-> you run for any other reason closes the window, because you will not pass the flag
-> again. The old behaviour was the opposite: an absent flag gave write access back,
+> **Revoked is the default. If you forget this step, the result is safe.** The next apply
+> you run for any other reason revokes it, because you will not pass the flag again. The old behaviour was the opposite: an absent flag gave write access back,
 > silently. That is why we changed the default.
 
 This is reversible. A future key rotation asks you for the flag again. Your read gates do
@@ -443,22 +451,27 @@ Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
 | zee-k source commit | `397eca5…` | `e4d8812…` | **CHANGED** |
 ```
 
-**What you run.** Five minutes, from your existing clone:
+**What you run.** Five minutes, from your existing clone. Set both variables again: a new
+terminal has neither, and an old one may still hold the previous tag.
 
 ```bash
+export PROJECT=<your GCP project id>
+export TAG=<the new tag>
+
 cd <your clone of key-share-holders>
-git fetch --tags && git checkout <new-tag>
+git fetch --tags && git checkout "$TAG"
+git describe --tags --exact-match   # expect: the NEW tag
 git status --porcelain              # expect: no output
 
 cd partner
 # init again. A release may add a provider, and plan fails until you do.
 # It is safe to run at any time and changes no infrastructure.
 terraform init -reconfigure -input=false \
-  -backend-config="bucket=<your-project>-tfstate" \
+  -backend-config="bucket=$PROJECT-tfstate" \
   -backend-config="prefix=cofhe-tdx-keygen/partner"
 
-terraform plan  -var-file=../values.tfvars -var partner_project_id=<your-project>
-terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
+terraform plan  -var-file=../values.tfvars -var partner_project_id=$PROJECT
+terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
 **What to expect. A rotation destroys bindings, and that is normal.** Each consumer's
@@ -480,10 +493,10 @@ the plan against the **CHANGED** rows in `EXPECTED.md`. A resource that no row e
 still a reason to stop and send us the plan.
 
 Your plan also proves each new digest against its commit before it pins anything. That
-needs `gh` on this machine, as in step 1. If we ever add a tool, the
+needs `gh` on this machine, as in [step 1](#1-prerequisites). If we ever add a tool, the
 release notes say so.
 
-Then run the `verify/` check from step 6 again, including its `init` line, and send us
+Then run the `verify/` check from [step 6](#6-apply-then-verify) again, including its `init` line, and send us
 the output.
 
 ---
@@ -502,13 +515,13 @@ the output.
   the read set. The network continues while enough partners remain. Use it with care,
   and tell us. From your clone, in `partner/`:
   ```bash
-  terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+  terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
     -var grant_read_access=false
   ```
   The provenance check still runs on a revoke. If a host in the table in step 1 is
   unreachable, add `skip_provenance_check`:
   ```bash
-  terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
+  terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
     -var grant_read_access=false -var skip_provenance_check=true
   ```
   Use this flag only when a check blocks an urgent revoke. Terraform refuses it on any
@@ -529,8 +542,8 @@ the output.
 | When | What you do | Effort |
 |---|---|---|
 | Onboarding | This page, one time | 1 to 2 hours |
-| Directly after the ceremony | Freeze write access again (step 11) | 5 minutes |
-| Each Fhenix release | Check out the new tag and apply. See *Apply a later release* above. | 5 minutes |
+| Directly after the ceremony | Revoke write access ([step 11](#11-revoke-write-access)) | 5 minutes |
+| Each Fhenix release | Check out the new tag and apply. See [Apply a later release](#apply-a-later-release). | 5 minutes |
 | Always | Keep the project and Secret Manager available. Google manages both. No on-call. | none |
 
 ## Reference
@@ -595,7 +608,7 @@ check at any time that only the attested consumer principals read your share:
 ```bash
 gcloud logging read \
   'protoPayload.methodName="google.cloud.secretmanager.v1.SecretManagerService.AccessSecretVersion"' \
-  --project=<your-project> --freshness=30d \
+  --project=$PROJECT --freshness=30d \
   --format='value(timestamp,protoPayload.authenticationInfo.principalSubject)'
 # expect only principal://…/workloadIdentityPools/cofhe-tee-reader-pool/… subjects
 ```
@@ -638,7 +651,7 @@ the three digests from `EXPECTED.md` at the tag into the first three lines. The
 script prints `OK` or `FAIL` for each gate. You do not compare anything by eye.
 
 ```bash
-PROJ=<your-project>
+PROJ=$PROJECT
 KEYGEN_DIGEST=sha256:…      # from EXPECTED.md at the tag
 TC_DIGEST=sha256:…
 ZK_DIGEST=sha256:…
