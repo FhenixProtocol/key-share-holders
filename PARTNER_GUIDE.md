@@ -55,8 +55,9 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
-You can test that claim yourself once you have the clone. See *Check our files against
-GitHub* at the end of step 3.
+You do not have to take our copy. *Check our attestations against GitHub*, under
+**Reference**, downloads the same attestation from GitHub instead. It is optional — your
+apply proves the images either way.
 
 ## 2. Create your Terraform state bucket
 
@@ -161,28 +162,6 @@ Your own project id is **not** in that file, and is in no file. You pass it with
 
 There is no other read path. Each read of your share goes through these gates. The
 module has no input that gives read access to a person or to a service account.
-
-### Check our files against GitHub
-
-The tag carries our copy of each attestation. You do not have to take it. Set
-`FHENIX_IGNORE_SHIPPED_BUNDLE=1` and the script downloads the attestation from GitHub
-instead:
-
-```bash
-FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
-```
-
-That path calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
-requests from your address. The anonymous limit is 60 requests an hour for each IP
-address, and everyone behind your address shares it. Wait and run it again, or pass any
-GitHub token to raise the limit:
-
-```bash
-FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
-```
-
-A token is never required. It only raises the limit, and it changes nothing about what is
-proven.
 
 > **Do not make an `image_digest` empty.** An empty digest means *not pinned*: any
 > attested workload in our project can then write to your secrets, and the provenance
@@ -636,6 +615,28 @@ gcloud logging read \
   --format='value(timestamp,protoPayload.authenticationInfo.principalSubject)'
 # expect only principal://…/workloadIdentityPools/cofhe-tee-reader-pool/… subjects
 ```
+
+### Check our attestations against GitHub
+
+Optional. The tag ships our copy of each attestation, and your apply reads it. If you
+would rather fetch the same attestation from GitHub, set `FHENIX_IGNORE_SHIPPED_BUNDLE=1`:
+
+```bash
+FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
+```
+
+Both paths check the same signature against the same public trust roots, so a pass means
+the same thing. This only changes where the file comes from.
+
+That path calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
+requests from your address: the anonymous limit is 60 an hour for each IP, shared by
+everyone behind it. Wait and run it again, or pass any GitHub token to raise the limit:
+
+```bash
+FHENIX_PROVENANCE_TOKEN=<token> ./partner/verify-image.sh …
+```
+
+A token is never required, and it changes nothing about what is proven.
 
 ### The same checks by hand
 
