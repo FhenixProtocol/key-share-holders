@@ -127,8 +127,21 @@ module has no input that gives read access to a person or to a service account.
 
 ## 4. Give Fhenix read-only access
 
-With this access, we can check your configuration without a request to you. This
-applies to onboarding and to each release after it.
+With this access we can check your configuration without asking you. It applies to
+onboarding and to every release after it.
+
+Two **Google-predefined** roles, on this project only:
+
+| Role | What it permits | What it does not permit |
+|---|---|---|
+| `roles/secretmanager.viewer` | See that a version exists, and when. This shows us that a ceremony completed. | Read the value (`versions.access`). Change IAM. |
+| `roles/iam.workloadIdentityPoolViewer` | Read your deployed CEL. This shows us the digest pin. | Change anything. |
+
+**These are Google roles, not roles that we made.** Check them in the Google
+documentation. Do not accept our description of them.
+
+> **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
+> apply. See *Why we do not ask for more* under Reference.
 
 ```bash
 cd access
@@ -139,25 +152,6 @@ terraform init -reconfigure -input=false \
 # `operators` defaults to ["group:protocol@fhenix.io"]
 ```
 
-`-input=false` makes `init` fail instead of asking *"Do you want to migrate all
-workspaces to gcs?"*. That question must not appear on a new setup; answering it
-wrongly overwrites state. The `&&` stops `apply` from running after a failed `init`.
-
-This binds two **Google-predefined** roles to our operator group in your project:
-
-| Role | What it permits | What it does not permit |
-|---|---|---|
-| `roles/secretmanager.viewer` | See that a version exists, and when. This shows us that a ceremony completed. | Read the value (`versions.access`). Change IAM. |
-| `roles/iam.workloadIdentityPoolViewer` | Read your deployed CEL. This shows us the digest pin. | Change anything. |
-
-**These are Google roles, not roles that we made.** Check them in the Google
-documentation. Do not accept our description of them. Both roles apply to this project
-only. `-var grant_view_access=false` removes them for that command only. To revoke for
-good, set `grant_view_access = false` in your `access/terraform.tfvars`.
-
-> **We never hold `secretmanager.secrets.setIamPolicy`.** That is why you run every
-> apply. See *Why we do not ask for more* under Reference.
-
 Check what we hold, at any time:
 
 ```bash
@@ -167,6 +161,9 @@ gcloud projects get-iam-policy <your-project> \
 # expect ONLY: roles/secretmanager.viewer
 #              roles/iam.workloadIdentityPoolViewer
 ```
+
+To revoke, set `grant_view_access = false` in your `access/terraform.tfvars` and apply.
+Passing `-var grant_view_access=false` does the same for one command only.
 
 ## 5. Init and plan
 
