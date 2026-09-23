@@ -103,9 +103,6 @@ curl -fsSL "https://github.com/FhenixProtocol/key-share-holders/archive/refs/tag
 
 The two commands above check what you will apply. This one checks what we published.
 
-`-f` and `&&` matter here: without them a wrong tag gives a 404 page, `shasum` hashes
-that, and you get a hash that looks like a mismatch on a release that is fine.
-
 ### What the release carries
 
 Four things, at the root of the clone:
