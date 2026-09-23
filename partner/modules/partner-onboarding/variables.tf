@@ -5,7 +5,7 @@ variable "partner_project_id" {
 
 variable "service_project_id" {
   type        = string
-  description = "Our keygen service's compute project. The CEL pins this (attribute.gce_project_id) and the secretVersionAdder grant targets the federated principal scoped to it — only attestations from VMs in this project can write."
+  description = "Our keygen service's compute project. The CEL pins this (attribute.gce_project_id) and the secretVersionAdder grant targets the federated principal scoped to it, so only attestations from VMs in this project can write."
 
   # Interpolated straight into the CEL attribute_condition and the principalSet
   # grant; reject anything that isn't a well-formed GCP project id so a malformed
@@ -25,7 +25,7 @@ variable "secret_ids" {
 variable "image_digest" {
   type        = string
   default     = ""
-  description = "If non-empty (e.g. \"sha256:abc...\"), the CEL additionally pins attribute.image_digest to exactly this image — the strongest gate (partner re-applies on every image rebuild). Leave empty during early dev to redeploy the service without a partner re-apply."
+  description = "If non-empty (e.g. \"sha256:abc...\"), the CEL additionally pins attribute.image_digest to exactly this image, the strongest gate (partner re-applies on every image rebuild). Leave empty during early dev to redeploy the service without a partner re-apply."
 
   # Interpolated into the CEL attribute_condition; only accept an empty string
   # (unpinned) or a canonical sha256 digest, so a malformed value can't inject
@@ -38,7 +38,7 @@ variable "image_digest" {
 
 variable "grant_write_access" {
   type = bool
-  # DEFAULT FALSE — fail safe. The keygen write is bootstrap-only: it is needed
+  # DEFAULT FALSE, fail safe. The keygen write is bootstrap-only: it is needed
   # for the one ceremony apply and must be off the rest of the time. Defaulting
   # to true made "forgot to pass the flag" silently RE-GRANT write access on any
   # later re-apply (e.g. re-pinning a consumer image digest); defaulting to false
@@ -52,13 +52,13 @@ variable "grant_write_access" {
 variable "attested_readers" {
   type = map(object({       # key = consumer name: "teecryptor" | "zee-k"
     gce_project_id = string # consumer's COMPUTE project (fhenix-compute-project)
-    image_digest   = string # consumer's image digest — REQUIRED non-empty (guardrail)
+    image_digest   = string # consumer's image digest, REQUIRED non-empty (guardrail)
     secret_id      = string # the ONE secret this consumer may read
   }))
   default = {}
   validation {
     condition     = alltrue([for r in values(var.attested_readers) : can(regex("^sha256:[a-f0-9]{64}$", r.image_digest))])
-    error_message = "every attested reader must pin a canonical sha256 image digest (never unpinned — the reader CEL must not be satisfiable by the keygen image)."
+    error_message = "every attested reader must pin a canonical sha256 image digest (never unpinned: the reader CEL must not be satisfiable by the keygen image)."
   }
   validation {
     condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", r.gce_project_id))])
@@ -76,7 +76,7 @@ variable "attested_readers" {
 
 # Revocable like grant_write_access, but the DEFAULT is the opposite: reads are the
 # steady state (consumers re-read on every boot), so this defaults TRUE and
-# revoking is an emergency brake — whereas write is bootstrap-only and defaults off.
+# revoking is an emergency brake, whereas write is bootstrap-only and defaults off.
 variable "grant_read_access" {
   type    = bool
   default = true

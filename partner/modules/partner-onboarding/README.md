@@ -47,7 +47,7 @@ output "onboarding" {
 ## Inputs
 
 The module has 11 input variables. [`variables.tf`](variables.tf) documents each
-one — its type, default, and purpose. [`../../terraform.tfvars.example`](../../terraform.tfvars.example)
+one: its type, default, and purpose. [`../../terraform.tfvars.example`](../../terraform.tfvars.example)
 shows a filled-in example. The sections below explain the variables that carry a
 safety decision: the image pin, attested reads, and write access.
 
@@ -128,7 +128,7 @@ action for each ceremony:
 grant_write_access = true    # ONLY for the apply before a key ceremony
 ```
 
-After the ceremony, apply again without that flag — see `PARTNER_GUIDE.md` step 11. The
+After the ceremony, apply again without that flag. See `PARTNER_GUIDE.md` step 11. The
 default is `false`, so this removes the
 `secretVersionAdder` binding. After that, a write attempt by our enclave fails with a
 permission error. The error is visible in our logs and in your audit log. It is never a

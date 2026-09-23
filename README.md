@@ -1,4 +1,4 @@
-# CoFHE key-share holders — the partner Terraform
+# CoFHE key-share holders: the partner Terraform
 
 This repository is the Terraform that a CoFHE key-custody partner applies in their own
 GCP project. It is the **source of truth**: there is no zip, no mirror, and no second
@@ -47,13 +47,13 @@ PARTNER_GUIDE.md   the onboarding guide. Start here.
 CHANGELOG.md       one entry per tag: what changed, which digests
 values.tfvars      the shared values of the current release (added at the first real release)
 EXPECTED.md        what your plan and verify must show for those values
-access/            step 4 — gives Fhenix READ-ONLY visibility in your project
-partner/           steps 5 to 6 — your two secrets and the attestation gates on them
+access/            step 4: gives Fhenix READ-ONLY visibility in your project
+partner/           steps 5 to 6: your two secrets and the attestation gates on them
   verify-image.sh  proves a digest came from the commit beside it, before it is pinned
                    (SLSA build provenance; needs gh, no GitHub account)
   provenance.tf    runs that proof on every plan and apply. A failure stops the run.
   bundles/         the signed attestation for each digest this release pins
-  verify/          step 6 — read-only check of what landed (no resources)
+  verify/          step 6: read-only check of what landed (no resources)
   modules/partner-onboarding/   the module. partner/ is a thin root around it.
 ```
 
@@ -114,7 +114,7 @@ Your secrets are then frozen.
 
 ## The one value you supply
 
-`partner_project_id` — your own GCP project. You pass it on the command line, as above.
+`partner_project_id` is your own GCP project. You pass it on the command line, as above.
 This repository never stores it, and no file here holds it. Everything else comes from
 `values.tfvars` at the tag you checked out.
 

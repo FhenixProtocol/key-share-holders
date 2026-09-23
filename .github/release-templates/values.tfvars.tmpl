@@ -1,5 +1,5 @@
 # Shared values for release __TAG__. Rendered by .github/workflows/release.yml.
-# Do not edit by hand — the next release overwrites this file.
+# Do not edit by hand. The next release overwrites this file.
 #
 # Your own project is NOT here. Pass it on the command line:
 #   terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
@@ -12,7 +12,7 @@ service_project_id = "__COMPUTE_PROJECT__"
 image_digest = "__KEYGEN_DIGEST__"
 source_sha   = "__KEYGEN_SHA__"
 
-# Only these exact consumer images may READ your share — each on ONE secret.
+# Only these exact consumer images may READ your share, each on ONE secret.
 attested_readers = {
   teecryptor = {
     gce_project_id = "__COMPUTE_PROJECT__"

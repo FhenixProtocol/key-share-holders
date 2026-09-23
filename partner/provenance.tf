@@ -1,4 +1,4 @@
-# Provenance gate — no resources, only checks.
+# Provenance gate: no resources, only checks.
 #
 # Every image digest this apply pins is checked against the PUBLIC Sigstore
 # transparency log first. The check asks one question: did the Fhenix workflow

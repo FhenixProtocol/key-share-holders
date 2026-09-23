@@ -1,4 +1,4 @@
-# Partner Dev — Initialization
+# Partner Dev: Initialization
 
 You check out the release tag we send you. It already carries the configuration file.
 You apply. This creates two Secret Manager entries and the IAM rules that decide
@@ -8,7 +8,7 @@ You apply. This creates two Secret Manager entries and the IAM rules that decide
 call with you.
 
 > **We send you one thing: a release tag in this repository.**
-> The tag carries everything — the Terraform, this guide, the `values.tfvars` with
+> The tag carries everything: the Terraform, this guide, the `values.tfvars` with
 > every shared value already filled in, and the `EXPECTED.md` that lists the exact
 > strings your checks must show. Every partner gets the same tag.
 >
@@ -98,15 +98,15 @@ The two commands above check what you will apply. This one checks what we publis
 
 Four things, at the root of the clone:
 
-- **`EXPECTED.md`** — every value this release pins, and what your `plan` and your
+- **`EXPECTED.md`**: every value this release pins, and what your `plan` and your
   `verify/` run must show. This is the file you check against.
-- **`values.tfvars`** — the shared values themselves. You pass it with `-var-file`; you do
+- **`values.tfvars`**: the shared values themselves. You pass it with `-var-file`; you do
   not edit it, and the `git status --porcelain` above already proves it is byte-identical
-  to what we tagged. Your own project id is **not** in it, and is in no file — you pass
+  to what we tagged. Your own project id is **not** in it, and is in no file. You pass
   that with `-var partner_project_id=<your-project>` on every command below.
-- **`partner/bundles/`** — one signed attestation for each pinned digest. Your apply reads
+- **`partner/bundles/`**: one signed attestation for each pinned digest. Your apply reads
   them. You do not touch them. See `partner/bundles/README.md`.
-- **`partner/modules/partner-onboarding/`** — the module itself. Read its README before you
+- **`partner/modules/partner-onboarding/`**: the module itself. Read its README before you
   apply. This module *is* the partner side: there is no binary and no service in this
   design.
 
@@ -211,25 +211,25 @@ know it ran, and it names the commit proven for each image.
 > release may legitimately destroy a read binding when an image rotates. See
 > *Apply a later release*.
 
-**If your plan matches, you are done here — go on to step 6.** The rest of this step is
+**If your plan matches, you are done here. Go on to step 6.** The rest of this step is
 troubleshooting.
 
 ### If a command fails
 
-**`init` asks "Do you want to migrate all workspaces to gcs?"** — answer **no**. On a new
+**`init` asks "Do you want to migrate all workspaces to gcs?"** Answer **no**. On a new
 setup that question must not appear at all, and answering it wrongly overwrites state.
 `-input=false` in the command above makes `init` fail instead of asking.
 
-**`init` fails with `Failed to get existing workspaces: querying Cloud Storage failed`** —
-your credentials expired. It is not a wrong bucket name. Run `gcloud auth
+**`init` fails with `Failed to get existing workspaces: querying Cloud Storage failed`.**
+Your credentials expired. It is not a wrong bucket name. Run `gcloud auth
 application-default login`. Those are separate from `gcloud auth login`.
 
-**`plan` stops with `External Program Execution Failed` on `verify-image.sh`** — read the
+**`plan` stops with `External Program Execution Failed` on `verify-image.sh`.** Read the
 last lines. The script says which of two things happened:
 
-- **`FAIL`** — the proof does not hold. Change nothing. Do not edit a digest or a
+- **`FAIL`**: the proof does not hold. Change nothing. Do not edit a digest or a
   `source_sha` to make it pass. Send us the whole error.
-- **`COULD NOT CHECK`** — the check did not finish. This says nothing about the image.
+- **`COULD NOT CHECK`**: the check did not finish. This says nothing about the image.
   A host in the table in step 1 was not reachable, or a file in `partner/bundles` is
   damaged. Correct that, then run the plan again.
 
@@ -270,7 +270,7 @@ only step that finds one.
 
 `write_access_granted` is `false` here. It becomes `true` only between steps 8 and 11.
 
-**If you see that block, you are done here — go on to step 7.** The rest of this step is
+**If you see that block, you are done here. Go on to step 7.** The rest of this step is
 troubleshooting.
 
 **Failure:** one or more errors. Each error ends with a `CHECK FAILED:` line.
@@ -313,8 +313,8 @@ gcloud secrets versions list cofhe-tee-zk-signer --project=<your-project>
 # expect: Listed 0 items.
 ```
 
-If either is not empty, stop and tell us. Then open the window — one apply, one extra
-flag:
+If either is not empty, stop and tell us. Then open the window. It is one apply, with
+one extra flag:
 
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project> \
@@ -368,7 +368,7 @@ for bootstrap only. **The module default is frozen** (`grant_write_access = fals
 you close it by applying without the flag you used in step 8.
 
 ```bash
-# 1. plan — expect EXACTLY 2 destroys, nothing else
+# 1. plan: expect EXACTLY 2 destroys, nothing else
 terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 #   Plan: 0 to add, 0 to change, 2 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
@@ -377,11 +377,11 @@ terraform plan -var-file=../values.tfvars -var partner_project_id=<your-project>
 # 2. apply
 terraform apply -var-file=../values.tfvars -var partner_project_id=<your-project>
 
-# 3. check that both secrets are frozen — same check as step 6, now with no write binding
+# 3. check that both secrets are frozen: same check as step 6, no write binding now
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=<your-project>
 # success: a SUCCESS block with write_access_granted = false
-# failure: "CHECK FAILED: the share … is still writable" — send it to Fhenix
+# failure: "CHECK FAILED: the share … is still writable". Send it to Fhenix
 ```
 
 > **Frozen is the default. If you forget this step, the result is safe.** The next apply
@@ -512,7 +512,7 @@ Then run the `verify/` check from step 6 again, and send us the output.
 | Onboarding | This page, one time | 1 to 2 hours |
 | Directly after the ceremony | Freeze write access again (step 11) | 5 minutes |
 | Each Fhenix release | Check out the new tag and apply. See *Apply a later release* above. | 5 minutes |
-| Always | Keep the project and Secret Manager available. Google manages both. No on-call. | — |
+| Always | Keep the project and Secret Manager available. Google manages both. No on-call. | none |
 
 ## Reference
 

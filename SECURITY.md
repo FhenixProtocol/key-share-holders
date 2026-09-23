@@ -5,13 +5,13 @@
 This repository is the Terraform a CoFHE key-custody partner applies in their
 own Google Cloud project. It provisions the partner's **attested write-gate**:
 the Workload Identity pool, provider, and CEL that decide who may write the
-partner's key share — only the exact pinned, attested keygen enclave can. The
+partner's key share. Only the exact pinned, attested keygen enclave can. The
 design is built to be verified, not trusted: the repo is public so a partner
 (or anyone) can review the policy they are applying before they apply it.
 
 ## Reporting a vulnerability
 
-Report security issues **privately** — do not open a public issue or PR.
+Report security issues **privately**. Do not open a public issue or PR.
 
 - Preferred: GitHub private vulnerability reporting (the repository's
   **Security** tab → "Report a vulnerability").

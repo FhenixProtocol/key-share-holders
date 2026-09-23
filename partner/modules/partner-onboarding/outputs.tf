@@ -1,4 +1,4 @@
-# The onboarding "return tuple" — what the partner sends back to us after apply.
+# The onboarding "return tuple": what the partner sends back to us after apply.
 # We register these in our partner registry; the keygen job reads them to know
 # which audience to attest for and which secret(s) to write. No SA, no bucket
 # (direct federated grant + public material in our bucket).

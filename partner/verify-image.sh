@@ -5,8 +5,8 @@
 #   ./verify-image.sh <image> <digest> <commit>
 #
 #   image    keygen | teecryptor | zee-k
-#   digest   sha256:<64 hex>   — the value you pin
-#   commit   <40 hex>          — the commit we published beside that digest
+#   digest   sha256:<64 hex>   the value you pin
+#   commit   <40 hex>          the commit we published beside that digest
 #
 # Exit 0 means the proof holds. Any other exit means DO NOT PIN.
 #
@@ -134,7 +134,7 @@ response="${workdir}/response.json"
 # gh resolves the image through the DEFAULT DOCKER KEYCHAIN. A partner who has
 # ever run `gcloud auth configure-docker` has a credential helper in
 # ~/.docker/config.json, and a stale token there makes gh fail before it checks
-# anything — which this script would report as a failed proof. Point gh at an
+# anything, which this script would report as a failed proof. Point gh at an
 # empty config so the image is always fetched anonymously, which is what the
 # public registry allows anyway.
 mkdir -p "${workdir}/docker"
@@ -169,7 +169,7 @@ fetch_bundle_from_api() {
 
   if [ "${http}" = "404" ]; then
     printf '%s\n' "" >&2
-    printf '%s\n' "FAIL — no attestation is published for this digest." >&2
+    printf '%s\n' "FAIL: no attestation is published for this digest." >&2
     printf '%s\n' "DO NOT PIN THIS DIGEST." >&2
     printf '%s\n' "" >&2
     printf '%s\n' "This usually means one of:" >&2
@@ -186,7 +186,7 @@ fetch_bundle_from_api() {
   # one per pinned image, so a shared office address can reach 403 honestly.
   if [ "${http}" != "200" ]; then
     printf '%s\n' "" >&2
-    printf '%s\n' "COULD NOT CHECK — this is NOT a failed proof (HTTP ${http})." >&2
+    printf '%s\n' "COULD NOT CHECK: this is NOT a failed proof (HTTP ${http})." >&2
     printf '%s\n' "" >&2
     if [ "${http}" = "403" ] || [ "${http}" = "429" ]; then
       printf '%s\n' "GitHub is rate-limiting this address. The anonymous limit is 60" >&2
@@ -257,7 +257,7 @@ if output="$(gh attestation verify "oci://${REGISTRY}@${DIGEST}" \
       --cert-identity "https://github.com/${SIGNER_WORKFLOW}@${REF}" \
       --source-ref "${REF}" \
       --source-digest "${COMMIT}" 2>&1)"; then
-  say "PASS — our workflow built this digest from commit ${COMMIT}."
+  say "PASS: our workflow built this digest from commit ${COMMIT}."
   say "You may pin it."
   # Fhenix release tooling only: release.yml proves each pin, then commits the
   # attestation that passed. Partners never set this. The path is relative to the
@@ -292,7 +292,7 @@ fi
 if printf '%s' "${output}" | grep -qE \
   'expected SourceRepository|expected Issuer to be|verifying with issuer|bundle issuer|no attestations'; then
   printf '%s\n' "" >&2
-  printf '%s\n' "FAIL — the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
+  printf '%s\n' "FAIL: the proof does not hold for ${IMAGE}. DO NOT PIN THIS DIGEST." >&2
   printf '%s\n' "" >&2
   printf '%s\n' "${output}" >&2
   printf '%s\n' "" >&2
@@ -309,7 +309,7 @@ if printf '%s' "${output}" | grep -qE \
 fi
 
 printf '%s\n' "" >&2
-printf '%s\n' "COULD NOT CHECK — the check did not finish." >&2
+printf '%s\n' "COULD NOT CHECK: the check did not finish." >&2
 printf '%s\n' "This is NOT a failed proof. It is also NOT a pass." >&2
 printf '%s\n' "" >&2
 printf '%s\n' "${output}" >&2

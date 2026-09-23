@@ -9,14 +9,14 @@ terraform {
 #
 # This is the ENTIRE partner-side setup: a partner runs `terraform apply` with
 # this module once to grant our attested keygen enclave the ability to write a
-# key share into their Secret Manager — gated by a CEL on our attestation. There
+# key share into their Secret Manager, gated by a CEL on our attestation. There
 # is no service, daemon, or binary on the partner side; onboarding == apply.
 #
 # Direct federated grant: the grant goes DIRECTLY to the attested federated principal
-# (principalSet scoped by gce_project_id) — there is no intermediate writer
+# (principalSet scoped by gce_project_id). There is no intermediate writer
 # service account to impersonate. The CEL (attribute_condition) is the gate.
 #
-# Public material (ServerKey/CRS/CPK) is NOT handled here — it lives in OUR GCS
+# Public material (ServerKey/CRS/CPK) is NOT handled here. It lives in OUR GCS
 # bucket, not the partner's; partners only receive their secret share.
 
 locals {
@@ -36,12 +36,12 @@ locals {
   attribute_condition = join("\n&& ", concat(local.base_conditions, local.image_conditions))
 
   # Principal the write grant targets. In a SHARED compute project (keygen and the
-  # reader enclaves co-resident — the production topology), scoping by
+  # reader enclaves co-resident, the production topology), scoping by
   # gce_project_id alone would let ANY attested workload in the project (including
   # a reader) mint a secretVersionAdder token. So when an image is pinned we scope
   # the write to that exact keygen image_digest; the unpinned dev default
   # (dedicated keygen project) falls back to project scoping. Production therefore
-  # MUST pin image_digest (the CEL pins it too — defense in depth).
+  # MUST pin image_digest (the CEL pins it too, defense in depth).
   write_principal = var.image_digest == "" ? (
     "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.pool.name}/attribute.gce_project_id/${var.service_project_id}"
     ) : (
@@ -67,7 +67,7 @@ resource "google_project_service" "apis" {
 # partner's project. With it, every read is attributable: the attested consumer
 # principal on a legitimate read, or a human / service account on an illegitimate
 # one. Authoritative for this one service only; other services' audit config is
-# untouched. Volume is negligible — shares are read at consumer boot.
+# untouched. Volume is negligible: shares are read at consumer boot.
 resource "google_project_iam_audit_config" "secretmanager" {
   project = var.partner_project_id
   service = "secretmanager.googleapis.com"
@@ -127,15 +127,15 @@ resource "google_iam_workload_identity_pool_provider" "provider" {
 }
 
 # Grant secretVersionAdder DIRECTLY to the attested federated
-# principal — scoped to the exact keygen image_digest when pinned (see
+# principal, scoped to the exact keygen image_digest when pinned (see
 # local.write_principal: required so a co-resident reader enclave can't mint a
 # write token in a shared compute project), else to gce_project_id (dev).
-# secretVersionAdder appends new versions only — NOT secretAccessor: the enclave
+# secretVersionAdder appends new versions only, NOT secretAccessor: the enclave
 # cannot read existing key material. No service account is involved.
 #
 # Revocation (var.grant_write_access = false): the partner removes this binding so
 # our attested enclave can no longer add a secret version. The keygen write is
-# bootstrap-only — once the partner has the key, they revoke and the secret is
+# bootstrap-only. Once the partner has the key, they revoke and the secret is
 # frozen; any later write attempt by us fails (and is visible/auditable, never
 # silent). The pool/provider and the secret itself are untouched, so it is fully
 # reversible (set back to true and re-apply to re-grant).
@@ -149,10 +149,10 @@ resource "google_secret_manager_secret_iam_member" "attested_add" {
 
 # --- Attested reader pool + providers (partner-enforced reads) ---------------
 # One reader POOL per partner, one PROVIDER per consumer. The keygen write
-# pool/provider/CEL above stays UNTOUCHED — that gate is not ours to weaken.
+# pool/provider/CEL above stays UNTOUCHED. That gate is not ours to weaken.
 locals {
   # dbgstat is pinned for BOTH consumers (tightens zee-k). Per-consumer CEL pins
-  # the CONSUMER's digest + compute project — never satisfiable by the keygen image.
+  # the CONSUMER's digest + compute project, never satisfiable by the keygen image.
   reader_condition = { for k, r in var.attested_readers : k => join("\n&& ", [
     "attribute.hwmodel == \"GCP_INTEL_TDX\"",
     "attribute.swname == \"CONFIDENTIAL_SPACE\"",

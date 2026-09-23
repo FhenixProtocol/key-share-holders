@@ -14,7 +14,7 @@
 #
 # This file stays only to show the SHAPE of what `values.tfvars` carries. Placeholders
 # are in <angle brackets>; `fhenix-compute-project` stands in until the real Fhenix
-# compute project is chosen. NEVER commit a real `terraform.tfvars` — it is gitignored.
+# compute project is chosen. NEVER commit a real `terraform.tfvars`. It is gitignored.
 
 partner_project_id = "<your-project>"          # you pass this with -var, not in a file
 service_project_id = "fhenix-compute-project"  # Fhenix compute project; the write CEL pins it
@@ -32,7 +32,7 @@ source_sha = "<keygen source commit>"
 # the next tag removes the write binding (the plan shows exactly 2 destroys).
 grant_write_access = true
 
-# Only these exact consumer images may READ your share — each on ONE secret.
+# Only these exact consumer images may READ your share, each on ONE secret.
 attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-compute-project"

@@ -7,9 +7,9 @@ variable "service_project_id" {
   type = string
   # NO DEFAULT, deliberately. It used to default to our own dev keygen project, so an apply
   # that forgot `-var-file` silently pinned the partner's write CEL to that project
-  # instead of the env's real compute project — a wrong gate, applied without error.
+  # instead of the env's real compute project: a wrong gate, applied without error.
   # Required now, so the same mistake fails loudly at plan time.
-  description = "Our keygen service's compute project for THIS env (e.g. fhenix-compute-project). The CEL pins it — only attestations from VMs in this project may write to the secret (a direct federated grant). Comes from the env's gitops keygen-partners var-file; there is no default."
+  description = "Our keygen service's compute project for THIS env (e.g. fhenix-compute-project). The CEL pins it, so only attestations from VMs in this project may write to the secret (a direct federated grant). Comes from the env's gitops keygen-partners var-file; there is no default."
 }
 
 variable "secret_ids" {
@@ -115,5 +115,5 @@ variable "attested_readers" {
 variable "grant_read_access" {
   type        = bool
   default     = true
-  description = "Set false to REVOKE the attested readers' secretAccessor bindings (pool/providers and secrets kept; reversible). Defaults TRUE — unlike grant_write_access, reads are the steady state: consumers re-read the shares on every boot, so revoking is an emergency brake, not a post-bootstrap step."
+  description = "Set false to REVOKE the attested readers' secretAccessor bindings (pool/providers and secrets kept; reversible). Defaults TRUE. Unlike grant_write_access, reads are the steady state: consumers re-read the shares on every boot, so revoking is an emergency brake, not a post-bootstrap step."
 }

@@ -1,4 +1,4 @@
-# Per-partner operator access — run ONCE per partner project, by the partner.
+# Per-partner operator access. Run ONCE per partner project, by the partner.
 #
 # Fhenix operators get READ-ONLY access, permanently. Two PREDEFINED Google roles:
 #
@@ -7,14 +7,14 @@
 #
 # That is enough to verify everything without asking the partner: that the CEL pins
 # the expected image digest, that the IAM bindings are the expected attested
-# principals, and that a ceremony landed (version METADATA — names, states,
+# principals, and that a ceremony landed (version METADATA: names, states,
 # timestamps). It cannot read a share (no `secretmanager.versions.access`) and
 # cannot change anything.
 #
 # Predefined rather than a custom role on purpose: a partner audits two
 # Google-documented roles instead of trusting a hand-written permission list.
 #
-# Trade-off accepted: a project custom role was a single revoke chokepoint —
+# Trade-off accepted: a project custom role was a single revoke chokepoint,
 # deleting it killed every binding to it, tracked by Terraform or not. Predefined
 # roles have no such chokepoint, so `grant_view_access = false` removes only the
 # bindings in state. A binding added out-of-band survives it. Verify a revoke with
@@ -22,8 +22,8 @@
 #
 # WHY WE DELIBERATELY DO NOT TAKE WRITE ACCESS
 #
-# `partner/` needs `secretmanager.secrets.setIamPolicy` — setting
-# per-secret IAM is its entire job — and whoever holds that can self-grant
+# `partner/` needs `secretmanager.secrets.setIamPolicy`, because setting
+# per-secret IAM is its entire job, and whoever holds that can self-grant
 # `secretAccessor` and read the share. Two partners reach T=2 and the network key
 # is reconstructable.
 #
@@ -31,7 +31,7 @@
 # by `gcloud secrets add-iam-policy-binding`) is not in Terraform state, and every
 # IAM resource in this repo is additive `*_iam_member`, so nothing later removes
 # it: a grant planted while the secrets are empty survives indefinitely and goes
-# live the moment a share is written. So the boundary cannot be time — the partner
+# live the moment a share is written. So the boundary cannot be time. The partner
 # runs `partner/` themselves and we never hold the permission at all.
 #
 # The ceremony does not need it either. The keygen enclave authenticates with TDX

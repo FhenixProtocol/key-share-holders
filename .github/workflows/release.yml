@@ -13,27 +13,27 @@ on:
       # Leave an image empty to carry its pin forward from the previous release.
       # Fill in only what this release moves. The first release needs all six.
       keygen_digest:
-        description: "keygen image digest (sha256:...) — empty = unchanged"
+        description: "keygen image digest (sha256:...): empty = unchanged"
         required: false
         default: ""
       keygen_sha:
-        description: "keygen source commit (full 40-hex) — empty = unchanged"
+        description: "keygen source commit (full 40-hex): empty = unchanged"
         required: false
         default: ""
       teecryptor_digest:
-        description: "teecryptor image digest (sha256:...) — empty = unchanged"
+        description: "teecryptor image digest (sha256:...): empty = unchanged"
         required: false
         default: ""
       teecryptor_sha:
-        description: "teecryptor source commit (full 40-hex) — empty = unchanged"
+        description: "teecryptor source commit (full 40-hex): empty = unchanged"
         required: false
         default: ""
       zeek_digest:
-        description: "zee-k image digest (sha256:...) — empty = unchanged"
+        description: "zee-k image digest (sha256:...): empty = unchanged"
         required: false
         default: ""
       zeek_sha:
-        description: "zee-k source commit (full 40-hex) — empty = unchanged"
+        description: "zee-k source commit (full 40-hex): empty = unchanged"
         required: false
         default: ""
   pull_request:
@@ -174,7 +174,7 @@ jobs:
 
       # The same check every partner's apply runs. A correctly shaped but wrong
       # source_sha passes the regex above, ships in the tag, and then fails at
-      # EVERY partner with "DO NOT PIN THIS DIGEST" — one typo, N incidents.
+      # EVERY partner with "DO NOT PIN THIS DIGEST": one typo, N incidents.
       # The runner has gh, jq and curl. FHENIX_PROVENANCE_TOKEN lifts the anonymous
       # 60/hour limit, which GitHub-hosted runners share by IP. The script uses
       # that name, not GITHUB_TOKEN, so a partner's ambient token never applies.
@@ -206,7 +206,7 @@ jobs:
           # Drop the bundles of digests this release no longer pins. Without this
           # the directory keeps every digest we ever shipped. Match the whole
           # name, image included, so a right digest under a wrong image name is
-          # dropped too — verify-image.sh would never read that file.
+          # dropped too. verify-image.sh would never read that file.
           keep=" keygen-${KEYGEN_DIGEST#sha256:} teecryptor-${TEECRYPTOR_DIGEST#sha256:} zee-k-${ZEEK_DIGEST#sha256:} "
           for f in partner/bundles/*.jsonl; do
             [[ -e "$f" ]] || continue
