@@ -26,7 +26,7 @@ Make sure you followed PROJECT_CREATION.md and filled the form at https://forms.
 
 ```bash
 export PROJECT=<your GCP project id>
-export TAG=<the tag we sent you>        # for example v1.0.1
+export TAG=<the tag we sent you>        # for example v1.0.2
 ```
 
 They live in your shell, so set them again in any new terminal.
