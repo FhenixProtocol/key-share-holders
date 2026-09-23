@@ -55,9 +55,9 @@ public trust roots above, which we do not control:
 
 A file that we changed fails the check.
 
-You do not have to take our copy. *Check our attestations against GitHub*, under
-**Reference**, downloads the same attestation from GitHub instead. It is optional — your
-apply proves the images either way.
+You do not have to take our copy. *Check a digest yourself*, under **Reference**, fetches
+the same attestation from GitHub instead. It is optional: your apply proves the images
+either way.
 
 ## 2. Create your Terraform state bucket
 
@@ -117,16 +117,11 @@ only around a key ceremony. See steps 8 to 11.
 
 `source_sha` is the commit each image was built from. Your `plan` and your `apply` prove
 every digest against the public Sigstore log before anything is pinned. A digest that did
-not come from the commit beside it fails your plan, and nothing is written.
+not come from the commit beside it fails your plan, and nothing is written. You do not
+have to do anything for this to happen.
 
-To run the same check by hand:
-
-```bash
-./partner/verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
-# FAIL means: change nothing, send us the output.
-```
-
-`plan` runs the same check.
+If you want to run that check on its own, see *Check a digest yourself* under
+**Reference**.
 
 Your own project id is **not** in that file, and is in no file. You pass it with
 `-var partner_project_id=<your-project>` on every command below.
@@ -586,19 +581,28 @@ gcloud logging read \
 # expect only principal://…/workloadIdentityPools/cofhe-tee-reader-pool/… subjects
 ```
 
-### Check our attestations against GitHub
+### Check a digest yourself
 
-Optional. The tag ships our copy of each attestation, and your apply reads it. If you
-would rather fetch the same attestation from GitHub, set `FHENIX_IGNORE_SHIPPED_BUNDLE=1`:
+Optional. Your `plan` and `apply` already run this check, and stop if a digest did not
+come from the commit beside it. To run it on its own:
+
+```bash
+./partner/verify-image.sh keygen "<image_digest>" "<source_sha>"   # also teecryptor, zee-k
+```
+
+`FAIL` means: change nothing, send us the output.
+
+That reads our copy of the attestation, which ships in the tag. To fetch the same
+attestation from GitHub instead:
 
 ```bash
 FHENIX_IGNORE_SHIPPED_BUNDLE=1 ./partner/verify-image.sh keygen <digest> <commit>
 ```
 
-Both paths check the same signature against the same public trust roots, so a pass means
-the same thing. This only changes where the file comes from.
+Both check the same signature against the same public trust roots, so a pass means the
+same thing. Only the source of the file changes.
 
-That path calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
+The second form calls `api.github.com`. A `COULD NOT CHECK … HTTP 403` means GitHub limits
 requests from your address: the anonymous limit is 60 an hour for each IP, shared by
 everyone behind it. Wait and run it again, or pass any GitHub token to raise the limit:
 
