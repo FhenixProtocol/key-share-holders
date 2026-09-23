@@ -1,4 +1,4 @@
-# Shared values for release v1.0.1. Rendered by .github/workflows/release.yml.
+# Shared values for release v1.0.2. Rendered by .github/workflows/release.yml.
 # Do not edit by hand. The next release overwrites this file.
 #
 # Your own project is NOT here. Pass it on the command line:
