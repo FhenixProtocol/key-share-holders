@@ -346,6 +346,10 @@ Tell us when it is applied. Step 11 revokes it again, and that is your last acti
 > **This is the only flag we will ever ask you to pass.** A request for
 > `grant_write_access=true` that did not come from us, or that arrives after the ceremony
 > is done, is not legitimate. Stop and call us.
+>
+> One case uses the same flag again, and it is not a second grant: a release that arrives
+> while your window is still open. There the flag keeps the window open. See
+> [Apply a later release while write access is granted](#apply-a-later-release-while-write-access-is-granted).
 
 ## 9. During the ceremony
 
@@ -431,6 +435,10 @@ not change. Decryption continues to work.
 Onboarding happens once. After it, each Fhenix release is the same short loop. Everything
 you need is in the tag. There is no other document.
 
+> **Did you run step 8 and not yet step 11?** Then your write access is granted. Use
+> [Apply a later release while write access is granted](#apply-a-later-release-while-write-access-is-granted)
+> instead. The commands below would close your write window.
+
 **What a release looks like.** We build new images and publish a tag here. The tag carries
 a new `values.tfvars` and a new `EXPECTED.md`. Some releases move one image; some move all
 three. `EXPECTED.md` names exactly what moved. Here all three changed:
@@ -498,6 +506,59 @@ release notes say so.
 
 Then run the `verify/` check from [step 6](#6-apply-then-verify) again, including its `init` line, and send us
 the output.
+
+---
+
+## Apply a later release while write access is granted
+
+Use this section when a release arrives between [step 8](#8-grant-write-access) and
+[step 11](#11-revoke-write-access). Your write access is granted, and the ceremony has not
+run yet. The steps are the same as in [Apply a later release](#apply-a-later-release), with
+one difference: `plan` and `apply` keep `-var grant_write_access=true`. Without it, the
+apply removes your two write bindings, and the keygen cannot write your share.
+
+```bash
+# Your GCP project ID, the same one you used in onboarding. Not the project number.
+export PROJECT=<your GCP project id>
+export TAG=<the new tag>
+
+cd <your clone of key-share-holders>
+git fetch --tags && git checkout "$TAG"
+git describe --tags --exact-match   # expect: the NEW tag
+git status --porcelain              # expect: no output
+
+cd partner
+terraform init -reconfigure -input=false \
+  -backend-config="bucket=$PROJECT-tfstate" \
+  -backend-config="prefix=cofhe-tdx-keygen/partner"
+
+terraform plan  -var-file=../values.tfvars -var partner_project_id=$PROJECT \
+  -var grant_write_access=true
+terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
+  -var grant_write_access=true
+
+terraform -chdir=verify init -backend=false -input=false
+terraform -chdir=verify plan -input=false \
+  -var-file=../../values.tfvars -var partner_project_id=$PROJECT
+```
+
+**What to expect.** The per-pin table in
+[Apply a later release](#apply-a-later-release) applies, with the keygen row for an open
+window. When all three images change:
+
+| | Plan |
+|---|---|
+| With `-var grant_write_access=true` (correct) | **4 to add, 3 to change, 4 to destroy** |
+| Without it (the window closes) | 2 to add, 3 to change, 4 to destroy |
+
+The four destroys are normal. Each binding that names an image digest is replaced: two
+write bindings for the new keygen digest, and one read binding for each new consumer
+digest. If your plan shows 2 to add, stop: the flag is missing. Do not apply.
+
+`verify/` must show a `SUCCESS` block with `write_access_granted = true`. Send us the
+output.
+
+Do not run [step 11](#11-revoke-write-access) now. We ask for it after the ceremony.
 
 ---
 
