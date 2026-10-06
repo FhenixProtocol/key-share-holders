@@ -514,8 +514,9 @@ the output.
 Use this section when a release arrives between [step 8](#8-grant-write-access) and
 [step 11](#11-revoke-write-access). Your write access is granted, and the ceremony has not
 run yet. The steps are the same as in [Apply a later release](#apply-a-later-release), with
-one difference: `plan` and `apply` keep `-var grant_write_access=true`. Without it, the
-apply removes your two write bindings, and the keygen cannot write your share.
+one difference: `plan`, `apply` and `verify/` keep `-var grant_write_access=true`.
+Without it, the apply removes your two write bindings, and the keygen cannot write your
+share.
 
 ```bash
 # Your GCP project ID, the same one you used in onboarding. Not the project number.
@@ -539,7 +540,8 @@ terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
 
 terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
-  -var-file=../../values.tfvars -var partner_project_id=$PROJECT
+  -var-file=../../values.tfvars -var partner_project_id=$PROJECT \
+  -var grant_write_access=true
 ```
 
 **What to expect.** The per-pin table in
