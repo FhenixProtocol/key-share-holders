@@ -544,10 +544,6 @@ terraform -chdir=verify plan -input=false \
   -var grant_write_access=true
 ```
 
-`verify/` takes the flag too. It checks that your write bindings match the flag, so
-without it, it reports `CHECK FAILED: the share ... is still writable` for a window that
-is correctly open.
-
 **What to expect.** The per-pin table in
 [Apply a later release](#apply-a-later-release) applies, with the keygen row for an open
 window. When all three images change:
