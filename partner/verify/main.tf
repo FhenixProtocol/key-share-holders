@@ -24,9 +24,17 @@ provider "google" {
 }
 
 locals {
-  reshare_read   = var.grant_reshare_read && var.grant_read_access
-  keygen_reader  = "/attribute.image_digest/${var.image_digest}"
   reader_pool_id = "cofhe-tee-reader-pool"
+  reshare_read   = var.grant_reshare_read && var.grant_read_access
+  # The full reader-pool principal for an image. A suffix match would also accept
+  # the same digest from the write pool, whose gate does not require dbgstat, or
+  # from any other pool.
+  # The project number comes from the write provider's resource name
+  # (projects/<number>/locations/…). The two viewer roles can read it; reading the
+  # project itself would need another role.
+  partner_number   = split("/", data.google_iam_workload_identity_pool_provider.write.name)[1]
+  reader_principal = "principalSet://iam.googleapis.com/projects/${local.partner_number}/locations/global/workloadIdentityPools/${local.reader_pool_id}/attribute.image_digest/"
+  keygen_reader    = "${local.reader_principal}${var.image_digest}"
   # Members the module is allowed to bind on a share. Anything else is a finding.
   attested_prefix = "principalSet://iam.googleapis.com/"
 }
@@ -125,8 +133,8 @@ data "google_secret_manager_secret_iam_policy" "secret" {
       condition = alltrue(flatten([
         for b in jsondecode(self.policy_data).bindings : [
           for m in b.members : anytrue(concat([
-            for r in var.attested_readers : endswith(m, "/attribute.image_digest/${r.image_digest}") if r.secret_id == each.key
-          ], [local.reshare_read && endswith(m, local.keygen_reader)]))
+            for r in var.attested_readers : m == "${local.reader_principal}${r.image_digest}" if r.secret_id == each.key
+          ], [local.reshare_read && m == local.keygen_reader]))
         ] if b.role == "roles/secretmanager.secretAccessor"
       ]))
       error_message = "CHECK FAILED: a reader of the share ${each.key} is not an image named in values.tfvars.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
@@ -134,7 +142,7 @@ data "google_secret_manager_secret_iam_policy" "secret" {
     postcondition {
       condition = anytrue(flatten([
         for b in jsondecode(self.policy_data).bindings : [
-          for m in b.members : endswith(m, local.keygen_reader)
+          for m in b.members : m == local.keygen_reader
         ] if b.role == "roles/secretmanager.secretAccessor"
       ])) == local.reshare_read
       error_message = local.reshare_read ? "CHECK FAILED: the keygen image cannot read the share ${each.key}, but grant_reshare_read is true. The reshare would fail.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the keygen image can still read the share ${each.key}. grant_reshare_read is false.\nDo not change anything. Send this message to Fhenix."
