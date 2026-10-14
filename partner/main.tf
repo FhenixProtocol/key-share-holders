@@ -31,6 +31,7 @@ module "onboarding" {
   image_digest       = var.image_digest
   grant_write_access = var.grant_write_access
   grant_read_access  = var.grant_read_access
+  grant_reshare_read = var.grant_reshare_read
 
   # source_sha is dropped here, deliberately. It is proof material for the
   # provenance gate, not gate material. The CEL pins the image digest and
@@ -64,4 +65,8 @@ output "secret_ids" {
 
 output "reader_wip_audiences" {
   value = module.onboarding.reader_wip_audiences
+}
+
+output "reshare_read_granted" {
+  value = module.onboarding.reshare_read_granted
 }

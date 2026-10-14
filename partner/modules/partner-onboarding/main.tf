@@ -164,7 +164,7 @@ locals {
 }
 
 resource "google_iam_workload_identity_pool" "reader_pool" {
-  count                     = length(var.attested_readers) > 0 ? 1 : 0
+  count                     = length(var.attested_readers) > 0 || var.grant_reshare_read ? 1 : 0
   project                   = var.partner_project_id
   workload_identity_pool_id = "cofhe-tee-reader-pool"
   depends_on                = [google_project_service.apis]
@@ -199,4 +199,53 @@ resource "google_secret_manager_secret_iam_member" "attested_read" {
   secret_id = google_secret_manager_secret.bundle[each.value.secret_id].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${each.value.image_digest}"
+}
+
+# --- Reshare read (keygen image, opt-in) --------------------------------------
+# A reshare rebuilds the live key from the current shares and splits it again for
+# a new partner set. The keygen image attests at this provider and reads both
+# secrets. The CEL pins the keygen image digest, the Fhenix compute project, and
+# debugging disabled since boot, like a consumer read gate. The partner turns it
+# on for one run and off after.
+locals {
+  keygen_reader_condition = join("\n&& ", [
+    "attribute.hwmodel == \"GCP_INTEL_TDX\"",
+    "attribute.swname == \"CONFIDENTIAL_SPACE\"",
+    "(\",\" + attribute.support_attributes + \",\").contains(\",${var.required_support_attribute},\")",
+    "attribute.dbgstat == \"disabled-since-boot\"",
+    "attribute.gce_project_id == \"${var.service_project_id}\"",
+    "attribute.image_digest == \"${var.image_digest}\"",
+  ])
+}
+
+resource "google_iam_workload_identity_pool_provider" "keygen_reader" {
+  count                              = var.grant_reshare_read ? 1 : 0
+  project                            = var.partner_project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.reader_pool[0].workload_identity_pool_id
+  workload_identity_pool_provider_id = "keygen-reader"
+  oidc {
+    issuer_uri        = var.issuer_uri
+    allowed_audiences = ["//iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/providers/keygen-reader"]
+  }
+  attribute_mapping = {
+    "google.subject"               = "assertion.sub"
+    "attribute.image_digest"       = "assertion.submods.container.image_digest"
+    "attribute.hwmodel"            = "assertion.hwmodel"
+    "attribute.swname"             = "assertion.swname"
+    "attribute.dbgstat"            = "assertion.dbgstat"
+    "attribute.support_attributes" = "assertion.submods.confidential_space.support_attributes.join(',')"
+    "attribute.gce_project_id"     = "assertion.submods.gce.project_id"
+  }
+  attribute_condition = local.keygen_reader_condition
+}
+
+# secretAccessor on both secrets, scoped to the keygen image digest in the reader
+# pool. A consumer provider pins its own digest, so only keygen-reader can mint
+# this principal.
+resource "google_secret_manager_secret_iam_member" "reshare_read" {
+  for_each  = var.grant_reshare_read && var.grant_read_access ? google_secret_manager_secret.bundle : {}
+  project   = var.partner_project_id
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${var.image_digest}"
 }

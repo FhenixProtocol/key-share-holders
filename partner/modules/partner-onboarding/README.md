@@ -118,6 +118,26 @@ as for the keygen write pin.
 `grant_read_access = false` removes all attested read bindings. The pool, the
 providers and the secrets stay. This is reversible.
 
+## Reshare read is off by default
+
+A reshare gives the shares to a new partner set and keeps the same key. The keygen
+image must read the current shares for that. This is the only read path the keygen
+image ever gets, and it is off by default:
+
+```hcl
+grant_reshare_read = true    # ONLY for the apply before a reshare
+```
+
+When it is `true`, the module creates the provider `keygen-reader` in
+`cofhe-tee-reader-pool`. Its CEL requires `GCP_INTEL_TDX` Confidential Space, the
+`STABLE` support tier and `dbgstat == "disabled-since-boot"`, and pins the Fhenix
+compute project and the keygen `image_digest`. The module gives `secretAccessor` on
+both secrets to that digest-scoped principal. The flag needs a pinned `image_digest`.
+`grant_read_access = false` also removes this grant.
+
+After the reshare, apply again without the flag. That removes the provider and the two
+bindings.
+
 ## Write access is off by default (you stay in control)
 
 Key creation is **bootstrap only**. So `grant_write_access` **defaults to `false`**:

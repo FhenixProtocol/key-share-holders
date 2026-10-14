@@ -24,6 +24,8 @@ provider "google" {
 }
 
 locals {
+  reshare_read   = var.grant_reshare_read && var.grant_read_access
+  keygen_reader  = "/attribute.image_digest/${var.image_digest}"
   reader_pool_id = "cofhe-tee-reader-pool"
   # Members the module is allowed to bind on a share. Anything else is a finding.
   attested_prefix = "principalSet://iam.googleapis.com/"
@@ -72,6 +74,28 @@ data "google_iam_workload_identity_pool_provider" "reader" {
   }
 }
 
+# --- Reshare read gate (only while grant_reshare_read = true) ----------------
+data "google_iam_workload_identity_pool_provider" "keygen_reader" {
+  count                              = var.grant_reshare_read ? 1 : 0
+  workload_identity_pool_id          = local.reader_pool_id
+  workload_identity_pool_provider_id = "keygen-reader"
+
+  lifecycle {
+    postcondition {
+      condition     = var.image_digest != "" && strcontains(self.attribute_condition, "attribute.image_digest == \"${var.image_digest}\"")
+      error_message = "CHECK FAILED: the reshare read gate does not pin the keygen image.\nExpected image: ${var.image_digest}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
+    }
+    postcondition {
+      condition     = strcontains(self.attribute_condition, "attribute.gce_project_id == \"${var.service_project_id}\"")
+      error_message = "CHECK FAILED: the reshare read gate does not pin the Fhenix compute project.\nExpected project: ${var.service_project_id}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
+    }
+    postcondition {
+      condition     = strcontains(self.attribute_condition, "attribute.dbgstat == \"disabled-since-boot\"")
+      error_message = "CHECK FAILED: the reshare read gate does not require debugging disabled since boot.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
+    }
+  }
+}
+
 # --- Who can touch each share ------------------------------------------------
 data "google_secret_manager_secret_iam_policy" "secret" {
   for_each  = toset(var.secret_ids)
@@ -96,15 +120,24 @@ data "google_secret_manager_secret_iam_policy" "secret" {
       ]) == 1
       error_message = "CHECK FAILED: the share ${each.key} must have exactly one reader binding.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
     }
+    # The keygen image is a reader only while grant_reshare_read = true.
     postcondition {
       condition = alltrue(flatten([
         for b in jsondecode(self.policy_data).bindings : [
-          for m in b.members : anytrue([
+          for m in b.members : anytrue(concat([
             for r in var.attested_readers : endswith(m, "/attribute.image_digest/${r.image_digest}") if r.secret_id == each.key
-          ])
+          ], [local.reshare_read && endswith(m, local.keygen_reader)]))
         ] if b.role == "roles/secretmanager.secretAccessor"
       ]))
-      error_message = "CHECK FAILED: the reader of the share ${each.key} is not the consumer image named in values.tfvars.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
+      error_message = "CHECK FAILED: a reader of the share ${each.key} is not an image named in values.tfvars.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
+    }
+    postcondition {
+      condition = anytrue(flatten([
+        for b in jsondecode(self.policy_data).bindings : [
+          for m in b.members : endswith(m, local.keygen_reader)
+        ] if b.role == "roles/secretmanager.secretAccessor"
+      ])) == local.reshare_read
+      error_message = local.reshare_read ? "CHECK FAILED: the keygen image cannot read the share ${each.key}, but grant_reshare_read is true. The reshare would fail.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the keygen image can still read the share ${each.key}. grant_reshare_read is false.\nDo not change anything. Send this message to Fhenix."
     }
     # Write binding present only while grant_write_access = true (ceremony window).
     postcondition {
@@ -124,5 +157,6 @@ output "SUCCESS" {
     write_gate_pins      = var.image_digest
     read_gates_pin       = { for k, r in var.attested_readers : k => r.image_digest }
     write_access_granted = var.grant_write_access
+    reshare_read_granted = local.reshare_read
   }
 }

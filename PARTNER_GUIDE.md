@@ -564,6 +564,40 @@ Do not run [step 11](#11-revoke-write-access) now. We ask for it after the cerem
 
 ---
 
+## A reshare (only when Fhenix asks)
+
+A reshare moves the key shares to a new partner set, for example when a key-share
+holder joins or leaves. **The key does not change.** The keygen image reads the current
+shares, splits the same key again, and writes the new shares. Fhenix tells you which
+release to apply and which flags to set.
+
+| Your role in the reshare | Flags for the apply before the run |
+|---|---|
+| You hold a share now, and you stay | `-var grant_reshare_read=true -var grant_write_access=true` |
+| You hold a share now, and you leave | `-var grant_reshare_read=true` |
+| You join | `-var grant_write_access=true` (normal onboarding) |
+
+Plan first. With `grant_reshare_read=true`, expect the provider `keygen-reader` and two
+`secretAccessor` bindings, one on each secret, for the keygen image digest:
+
+```bash
+terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT \
+  -var grant_reshare_read=true
+#   + google_iam_workload_identity_pool_provider.keygen_reader[0]
+#   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-fhe-priv"]
+#   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-zk-signer"]
+```
+
+Apply, then run `verify/` with the same flags. It checks the reshare gate and expects
+the keygen image as a reader.
+
+After Fhenix confirms the run, apply again **without** the flags. That removes the
+read grant and the write grant. Run `verify/` again: the SUCCESS block shows
+`reshare_read_granted = false`.
+
+> **If you leave the partner set:** keep your secret until Fhenix confirms the soak
+> period is over. A rollback reads it. Then delete the secret.
+
 ## Things you must never do
 
 - **Never** make an `image_digest` empty. This removes the pin from the gate.

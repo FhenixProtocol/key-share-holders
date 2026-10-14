@@ -82,6 +82,23 @@ variable "grant_read_access" {
   default = true
 }
 
+# A reshare splits the live key again for a new partner set. The keygen image
+# must read the current shares for that, so this is the one read path the keygen
+# image ever gets. Default false, like grant_write_access: a forgotten flag
+# revokes. grant_read_access = false (the emergency brake) also removes it.
+variable "grant_reshare_read" {
+  type        = bool
+  default     = false
+  description = "Set true ONLY for the apply before a reshare that Fhenix asks for: the pinned keygen image may then read both secrets. Set back to false after the run."
+
+  # The read is scoped to the keygen image digest. Unpinned, it would reach any
+  # attested workload in the service project.
+  validation {
+    condition     = !var.grant_reshare_read || var.image_digest != ""
+    error_message = "grant_reshare_read needs image_digest: the reshare read is scoped to the pinned keygen image."
+  }
+}
+
 variable "pool_id" {
   type        = string
   default     = "cofhe-tee-keygen-pool"
