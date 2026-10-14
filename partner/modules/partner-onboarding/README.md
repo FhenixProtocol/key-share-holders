@@ -15,12 +15,13 @@ key share into the partner's Secret Manager. A CEL on our attestation gates that
 | `google_iam_workload_identity_pool` `cofhe-tee-reader-pool` + one `_provider` per consumer | OIDC trust for the token of each consumer enclave. |
 | CEL `attribute_condition` on each provider | The gate. Only our genuine attested image, from our project, can get a token. |
 | `google_project_iam_audit_config` (Secret Manager) | Data Access audit logs. Each read of a share is logged in the partner's project. |
-| `google_secret_manager_secret_iam_member` | Gives `secretVersionAdder` (keygen) and `secretAccessor` (each consumer, on its own secret) **directly** to attested federated principals. No service account. |
+| `google_secret_manager_secret_iam_member` | Gives `secretVersionAdder` (keygen) and `secretAccessor` (each consumer, on its own secret; the keygen image only while `grant_reshare_read = true`) **directly** to attested federated principals. No service account. |
 
 The module does **not** create a bucket. Public material (ServerKey, CRS,
 CompactPublicKey) is in *our* GCS bucket, not in the partner's project. The keygen
-grant is `secretVersionAdder` (append only). It is never `secretAccessor`. The
-enclave can add versions. It cannot read key material.
+write grant is `secretVersionAdder` (append only). The enclave can add versions. It
+cannot read key material, except during a reshare that you turn on with
+`grant_reshare_read` (see below).
 
 ## Usage
 
