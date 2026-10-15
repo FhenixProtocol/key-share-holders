@@ -63,7 +63,7 @@ partner/           steps 5 to 6: your two secrets and the attestation gates on t
 |---|---|
 | 2 Secret Manager secrets `cofhe-tee-fhe-priv`, `cofhe-tee-zk-signer` | Your share of the FHE private key (with the decrypt signer) and of the zk signer. Both have `prevent_destroy`. |
 | Workload Identity pool + provider `cofhe-tee-keygen-pool` / `-provider` | The **write** gate. The CEL requires genuine Intel TDX Confidential Space, the STABLE image tier, the Fhenix compute project, and the exact keygen image digest. |
-| Reader pool + 2 providers `cofhe-tee-reader-pool` / `teecryptor-reader`, `zee-k-reader` | The **read** gates. Same CEL, plus `dbgstat == "disabled-since-boot"`, pinned to the exact image digest of each consumer. |
+| Reader pool + providers `cofhe-tee-reader-pool` / `teecryptor-reader`, `zee-k-reader`, and `keygen-reader` (disabled outside a reshare) | The **read** gates. Same CEL, plus `dbgstat == "disabled-since-boot"`, pinned to the exact image digest of each consumer. |
 | `secretVersionAdder` × 2 → attested keygen principal | Append-only write. Present only while `grant_write_access = true` (the ceremony window). |
 | `secretAccessor` × 2 → attested consumer principals | Each consumer image can read **only** its own secret. |
 | Secret Manager Data Access audit config | Each read of a share is logged in your project, with the identity that made it. |

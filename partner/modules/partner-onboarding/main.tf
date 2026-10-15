@@ -148,12 +148,22 @@ resource "google_secret_manager_secret_iam_member" "attested_add" {
 }
 
 # --- Attested reader pool + providers (partner-enforced reads) ---------------
-# One reader POOL per partner, one PROVIDER per consumer. The keygen write
+# One reader POOL per partner, one PROVIDER per reader. The keygen write
 # pool/provider/CEL above stays UNTOUCHED. That gate is not ours to weaken.
 locals {
-  # dbgstat is pinned for BOTH consumers (tightens zee-k). Per-consumer CEL pins
-  # the CONSUMER's digest + compute project, never satisfiable by the keygen image.
-  reader_condition = { for k, r in var.attested_readers : k => join("\n&& ", [
+  # grant_read_access = false is the read kill switch: it also stops the keygen read.
+  reshare_read = var.grant_reshare_read && var.grant_read_access
+  # One read gate per reader. The keygen gate exists while the keygen image is
+  # pinned, and is enabled only for a reshare the partner approves. It is disabled,
+  # not deleted, outside a reshare: Google keeps a deleted provider id reserved for
+  # 30 days, so a delete would block a retry or a reshare back. Every other gate
+  # pins a consumer digest, never the keygen image.
+  reader_gates = merge(
+    { for k, r in var.attested_readers : k => { gce_project_id = r.gce_project_id, image_digest = r.image_digest } },
+    var.image_digest == "" ? {} : { keygen = { gce_project_id = var.service_project_id, image_digest = var.image_digest } },
+  )
+  # dbgstat is pinned for every reader (tightens zee-k).
+  reader_condition = { for k, r in local.reader_gates : k => join("\n&& ", [
     "attribute.hwmodel == \"GCP_INTEL_TDX\"",
     "attribute.swname == \"CONFIDENTIAL_SPACE\"",
     "(\",\" + attribute.support_attributes + \",\").contains(\",${var.required_support_attribute},\")",
@@ -164,17 +174,18 @@ locals {
 }
 
 resource "google_iam_workload_identity_pool" "reader_pool" {
-  count                     = length(var.attested_readers) > 0 ? 1 : 0
+  count                     = length(local.reader_gates) > 0 ? 1 : 0
   project                   = var.partner_project_id
   workload_identity_pool_id = "cofhe-tee-reader-pool"
   depends_on                = [google_project_service.apis]
 }
 
 resource "google_iam_workload_identity_pool_provider" "reader" {
-  for_each                           = var.attested_readers
+  for_each                           = local.reader_gates
   project                            = var.partner_project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.reader_pool[0].workload_identity_pool_id
   workload_identity_pool_provider_id = "${each.key}-reader"
+  disabled                           = each.key == "keygen" && !local.reshare_read
   oidc {
     issuer_uri        = var.issuer_uri
     allowed_audiences = ["//iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/providers/${each.key}-reader"]
@@ -199,4 +210,19 @@ resource "google_secret_manager_secret_iam_member" "attested_read" {
   secret_id = google_secret_manager_secret.bundle[each.value.secret_id].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${each.value.image_digest}"
+}
+
+# --- Reshare read (keygen image, opt-in) --------------------------------------
+# A reshare rebuilds the live key from the current shares and splits it again for
+# a new partner set. The keygen image reads both secrets through the `keygen` read
+# gate above, which is enabled only while the partner approves the reshare.
+# secretAccessor on both secrets, scoped to the keygen image digest in the reader
+# pool. A consumer gate pins its own digest, so only the keygen gate can mint this
+# principal.
+resource "google_secret_manager_secret_iam_member" "reshare_read" {
+  for_each  = local.reshare_read ? google_secret_manager_secret.bundle : {}
+  project   = var.partner_project_id
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${var.image_digest}"
 }

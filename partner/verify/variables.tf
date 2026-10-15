@@ -46,6 +46,11 @@ variable "grant_read_access" {
   default = true
 }
 
+variable "grant_reshare_read" {
+  type    = bool
+  default = false
+}
+
 variable "pool_id" {
   type    = string
   default = "cofhe-tee-keygen-pool"
