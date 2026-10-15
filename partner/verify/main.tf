@@ -26,10 +26,11 @@ provider "google" {
 locals {
   reader_pool_id = "cofhe-tee-reader-pool"
   reshare_read   = var.grant_reshare_read && var.grant_read_access
-  # The same read gates the module builds: the keygen joins only during a reshare.
+  # The same read gates the module builds. The keygen gate exists while the keygen
+  # image is pinned, and is enabled only during a reshare.
   reader_gates = merge(
     { for k, r in var.attested_readers : k => { gce_project_id = r.gce_project_id, image_digest = r.image_digest } },
-    local.reshare_read ? { keygen = { gce_project_id = var.service_project_id, image_digest = var.image_digest } } : {},
+    var.image_digest == "" ? {} : { keygen = { gce_project_id = var.service_project_id, image_digest = var.image_digest } },
   )
   # The full reader-pool principal for an image. A suffix match would also accept
   # the same digest from the write pool, whose gate does not require dbgstat, or
@@ -88,6 +89,10 @@ data "google_iam_workload_identity_pool_provider" "reader" {
       condition     = strcontains(self.attribute_condition, "attribute.dbgstat == \"disabled-since-boot\"")
       error_message = "CHECK FAILED: the ${each.key} read gate does not require debugging disabled since boot.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
     }
+    postcondition {
+      condition     = self.disabled == (each.key == "keygen" && !local.reshare_read)
+      error_message = each.key == "keygen" && !local.reshare_read ? "CHECK FAILED: the keygen read gate is enabled, but grant_reshare_read is false.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the ${each.key} read gate is disabled. Reads through it fail.\nDo not change anything. Send this message to Fhenix."
+    }
   }
 }
 
@@ -107,7 +112,7 @@ data "google_secret_manager_secret_iam_policy" "secret" {
       ])
       error_message = "CHECK FAILED: an identity that is not an attested enclave can read the share ${each.key}.\nUnexpected identities: ${join(", ", [for b in jsondecode(self.policy_data).bindings : join(", ", [for m in b.members : m if !startswith(m, local.attested_prefix)])])}\nDo not change anything. Send this message to Fhenix."
     }
-    # Exactly one attested reader, scoped to the consumer image that owns this secret.
+    # Exactly one reader binding. Its members are checked below.
     postcondition {
       condition = length([
         for b in jsondecode(self.policy_data).bindings : b
@@ -115,7 +120,8 @@ data "google_secret_manager_secret_iam_policy" "secret" {
       ]) == 1
       error_message = "CHECK FAILED: the share ${each.key} must have exactly one reader binding.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
     }
-    # The keygen image is a reader only while grant_reshare_read = true.
+    # Every reader is a consumer image named in values.tfvars, or the keygen image
+    # during a reshare.
     postcondition {
       condition = alltrue(flatten([
         for b in jsondecode(self.policy_data).bindings : [
@@ -126,6 +132,7 @@ data "google_secret_manager_secret_iam_policy" "secret" {
       ]))
       error_message = "CHECK FAILED: a reader of the share ${each.key} is not an image named in values.tfvars.\nDeployed policy: ${self.policy_data}\nDo not change anything. Send this message to Fhenix."
     }
+    # The keygen image is a reader only while grant_reshare_read = true.
     postcondition {
       condition = anytrue(flatten([
         for b in jsondecode(self.policy_data).bindings : [

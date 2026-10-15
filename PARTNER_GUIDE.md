@@ -577,13 +577,14 @@ release to apply and which flags to set.
 | You hold a share now, and you leave | `-var grant_reshare_read=true` |
 | You join | `-var grant_write_access=true` (normal onboarding) |
 
-Plan first. With `grant_reshare_read=true`, expect the provider `keygen-reader` and two
-`secretAccessor` bindings, one on each secret, for the keygen image digest:
+Plan first. The provider `keygen-reader` already exists, disabled. With
+`grant_reshare_read=true`, expect it to be enabled and two `secretAccessor` bindings,
+one on each secret, for the keygen image digest:
 
 ```bash
 terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT \
   -var grant_reshare_read=true
-#   + google_iam_workload_identity_pool_provider.reader["keygen"]
+#   ~ google_iam_workload_identity_pool_provider.reader["keygen"]   disabled = true -> false
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-fhe-priv"]
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-zk-signer"]
 ```
@@ -591,12 +592,24 @@ terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT \
 Apply, then run `verify/` with the same flags. It checks the reshare gate and expects
 the keygen image as a reader.
 
-After Fhenix confirms the run, apply again **without** the flags. That removes the
-read grant and the write grant. Run `verify/` again: the SUCCESS block shows
-`reshare_read_granted = false`.
+After Fhenix confirms the run, apply again **without** the flags. That disables the
+gate and removes the read grant and the write grant. Run `verify/` again: the SUCCESS
+block shows `reshare_read_granted = false`.
 
-> **If you leave the partner set:** keep your secret until Fhenix confirms the soak
-> period is over. A rollback reads it. Then delete the secret.
+> **Keep your old secret versions.** A reshare adds a new version and leaves the old
+> ones. Do not destroy them, and if you leave the partner set, do not delete your
+> secret. A rollback reads them. Fhenix asks you explicitly if one must go.
+
+**Emergency rollback (only when Fhenix asks):** add a new version to each of your two
+secrets, with the payload of the version Fhenix names. Copy it inside your own
+project:
+
+```bash
+for s in cofhe-tee-fhe-priv cofhe-tee-zk-signer; do
+  gcloud secrets versions access <version> --secret=$s --project=$PROJECT \
+    | gcloud secrets versions add $s --data-file=- --project=$PROJECT
+done
+```
 
 ## Things you must never do
 
@@ -604,8 +617,9 @@ read grant and the write grant. Run `verify/` again: the SUCCESS block shows
 - **Never** edit a `source_sha` to make a failing check pass. A failure means the digest
   and the commit do not belong together. Send it to us.
 - **Never** give `secretAccessor` on a share to a person or to a service account.
-- **Never** delete a secret. Each secret has `prevent_destroy`. Removal of a secret is
-  a deliberate, coordinated action.
+- **Never** delete a secret, and never destroy an old secret version. Each secret has
+  `prevent_destroy`. Rollback after a reshare reads old versions. Removal is a
+  deliberate action that Fhenix asks for explicitly.
 - **Never** apply a configuration file that did not arrive through the agreed channel.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
@@ -686,13 +700,14 @@ with hardware attestation, not with the credentials of a Fhenix employee.
   requires debugging disabled since boot.
 - Each identity on each secret is an attested `principalSet`. There is no `user:` and
   no `serviceAccount:`.
-- Each secret has exactly one reader. The reader is the consumer that owns that secret.
+- Each secret has one reader binding. Its members are the consumer that owns the
+  secret, and the keygen image only while `grant_reshare_read = true`.
 - The write binding exists only while `grant_write_access = true`.
 
 > **What the gates say.** Each CEL requires genuine **Intel TDX Confidential Space**
 > hardware and software, the **STABLE** image tier (debug and experimental images are
-> rejected), a request from our compute project, and the exact image digest. The two
-> read gates also require **debugging disabled since boot**. If one condition fails,
+> rejected), a request from our compute project, and the exact image digest. The read
+> gates also require **debugging disabled since boot**. If one condition fails,
 > access is refused. There is no partial access and no fallback.
 
 ### Audit logs

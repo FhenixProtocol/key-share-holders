@@ -72,6 +72,10 @@ variable "attested_readers" {
     condition     = alltrue([for k in keys(var.attested_readers) : can(regex("^[a-z][a-z0-9-]{2,20}$", k))])
     error_message = "consumer keys become provider ids (<key>-reader); keep them short lowercase slugs."
   }
+  validation {
+    condition     = !contains(keys(var.attested_readers), "keygen")
+    error_message = "\"keygen\" is reserved for the reshare read gate."
+  }
 }
 
 # Revocable like grant_write_access, but the DEFAULT is the opposite: reads are the
