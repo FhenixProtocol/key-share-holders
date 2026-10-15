@@ -30,11 +30,11 @@ output "write_access_granted" {
 
 output "reshare_read_granted" {
   description = "Whether the pinned keygen image can currently read both secrets for a reshare."
-  value       = var.grant_reshare_read && var.grant_read_access
+  value       = local.reshare_read
 }
 
 output "reader_wip_audiences" {
   description = "Per-consumer audience the reader enclave attests for at THIS partner."
   value = { for k, p in google_iam_workload_identity_pool_provider.reader :
-  k => "//iam.googleapis.com/${p.name}" }
+  k => "//iam.googleapis.com/${p.name}" if k != "keygen" }
 }

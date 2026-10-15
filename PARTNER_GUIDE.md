@@ -583,7 +583,7 @@ Plan first. With `grant_reshare_read=true`, expect the provider `keygen-reader` 
 ```bash
 terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT \
   -var grant_reshare_read=true
-#   + google_iam_workload_identity_pool_provider.keygen_reader[0]
+#   + google_iam_workload_identity_pool_provider.reader["keygen"]
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-fhe-priv"]
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-zk-signer"]
 ```

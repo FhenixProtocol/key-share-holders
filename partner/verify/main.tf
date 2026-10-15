@@ -26,6 +26,11 @@ provider "google" {
 locals {
   reader_pool_id = "cofhe-tee-reader-pool"
   reshare_read   = var.grant_reshare_read && var.grant_read_access
+  # The same read gates the module builds: the keygen joins only during a reshare.
+  reader_gates = merge(
+    { for k, r in var.attested_readers : k => { gce_project_id = r.gce_project_id, image_digest = r.image_digest } },
+    local.reshare_read ? { keygen = { gce_project_id = var.service_project_id, image_digest = var.image_digest } } : {},
+  )
   # The full reader-pool principal for an image. A suffix match would also accept
   # the same digest from the write pool, whose gate does not require dbgstat, or
   # from any other pool.
@@ -60,9 +65,9 @@ data "google_iam_workload_identity_pool_provider" "write" {
   }
 }
 
-# --- Read gates (one per consumer) ------------------------------------------
+# --- Read gates (one per reader) --------------------------------------------
 data "google_iam_workload_identity_pool_provider" "reader" {
-  for_each                           = var.attested_readers
+  for_each                           = local.reader_gates
   workload_identity_pool_id          = local.reader_pool_id
   workload_identity_pool_provider_id = "${each.key}-reader"
 
@@ -76,34 +81,12 @@ data "google_iam_workload_identity_pool_provider" "reader" {
       error_message = "CHECK FAILED: the ${each.key} read gate does not pin the compute project.\nExpected project: ${each.value.gce_project_id}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
     }
     postcondition {
+      condition     = strcontains(self.attribute_condition, "attribute.hwmodel == \"GCP_INTEL_TDX\"") && strcontains(self.attribute_condition, "attribute.swname == \"CONFIDENTIAL_SPACE\"")
+      error_message = "CHECK FAILED: the ${each.key} read gate does not require Intel TDX Confidential Space.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
+    }
+    postcondition {
       condition     = strcontains(self.attribute_condition, "attribute.dbgstat == \"disabled-since-boot\"")
       error_message = "CHECK FAILED: the ${each.key} read gate does not require debugging disabled since boot.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
-    }
-  }
-}
-
-# --- Reshare read gate (only while grant_reshare_read = true) ----------------
-data "google_iam_workload_identity_pool_provider" "keygen_reader" {
-  count                              = local.reshare_read ? 1 : 0
-  workload_identity_pool_id          = local.reader_pool_id
-  workload_identity_pool_provider_id = "keygen-reader"
-
-  lifecycle {
-    postcondition {
-      condition     = var.image_digest != "" && strcontains(self.attribute_condition, "attribute.image_digest == \"${var.image_digest}\"")
-      error_message = "CHECK FAILED: the reshare read gate does not pin the keygen image.\nExpected image: ${var.image_digest}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
-    }
-    postcondition {
-      condition     = strcontains(self.attribute_condition, "attribute.gce_project_id == \"${var.service_project_id}\"")
-      error_message = "CHECK FAILED: the reshare read gate does not pin the Fhenix compute project.\nExpected project: ${var.service_project_id}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
-    }
-    postcondition {
-      condition     = strcontains(self.attribute_condition, "attribute.hwmodel == \"GCP_INTEL_TDX\"") && strcontains(self.attribute_condition, "attribute.swname == \"CONFIDENTIAL_SPACE\"")
-      error_message = "CHECK FAILED: the reshare read gate does not require a TDX Confidential Space VM.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
-    }
-    postcondition {
-      condition     = strcontains(self.attribute_condition, "attribute.dbgstat == \"disabled-since-boot\"")
-      error_message = "CHECK FAILED: the reshare read gate does not require debugging disabled since boot.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
     }
   }
 }
