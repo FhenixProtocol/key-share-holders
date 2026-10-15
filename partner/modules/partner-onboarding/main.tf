@@ -219,7 +219,8 @@ locals {
 }
 
 resource "google_iam_workload_identity_pool_provider" "keygen_reader" {
-  count                              = var.grant_reshare_read ? 1 : 0
+  # grant_read_access = false is the read kill switch: no grant, so no gate either.
+  count                              = var.grant_reshare_read && var.grant_read_access ? 1 : 0
   project                            = var.partner_project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.reader_pool[0].workload_identity_pool_id
   workload_identity_pool_provider_id = "keygen-reader"

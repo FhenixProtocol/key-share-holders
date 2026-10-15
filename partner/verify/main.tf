@@ -84,7 +84,7 @@ data "google_iam_workload_identity_pool_provider" "reader" {
 
 # --- Reshare read gate (only while grant_reshare_read = true) ----------------
 data "google_iam_workload_identity_pool_provider" "keygen_reader" {
-  count                              = var.grant_reshare_read ? 1 : 0
+  count                              = local.reshare_read ? 1 : 0
   workload_identity_pool_id          = local.reader_pool_id
   workload_identity_pool_provider_id = "keygen-reader"
 
@@ -96,6 +96,10 @@ data "google_iam_workload_identity_pool_provider" "keygen_reader" {
     postcondition {
       condition     = strcontains(self.attribute_condition, "attribute.gce_project_id == \"${var.service_project_id}\"")
       error_message = "CHECK FAILED: the reshare read gate does not pin the Fhenix compute project.\nExpected project: ${var.service_project_id}\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
+    }
+    postcondition {
+      condition     = strcontains(self.attribute_condition, "attribute.hwmodel == \"GCP_INTEL_TDX\"") && strcontains(self.attribute_condition, "attribute.swname == \"CONFIDENTIAL_SPACE\"")
+      error_message = "CHECK FAILED: the reshare read gate does not require a TDX Confidential Space VM.\nDeployed condition: ${self.attribute_condition}\nDo not change anything. Send this message to Fhenix."
     }
     postcondition {
       condition     = strcontains(self.attribute_condition, "attribute.dbgstat == \"disabled-since-boot\"")
