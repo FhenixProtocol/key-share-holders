@@ -1,4 +1,4 @@
-# Shared values for release v1.0.5. Rendered by .github/workflows/release.yml.
+# Shared values for release v1.0.6. Rendered by .github/workflows/release.yml.
 # Do not edit by hand. The next release overwrites this file.
 #
 # Your own project is NOT here. Pass it on the command line:
@@ -22,8 +22,8 @@ attested_readers = {
   }
   zee-k = {
     gce_project_id = "fhenix-mainnet"
-    image_digest   = "sha256:88f5a66d658f207b5b503a0b5803c183aca076999d9ed423d974f58bfcee1969"
-    source_sha     = "fe559a98cb2ac8c48c612d54985436f6bf981ea0"
+    image_digest   = "sha256:e773b9cc9f72dc87906d05c6f8e96ac8e8dd7480db3d6e66f3b3b20d58ea8ad4"
+    source_sha     = "47a59438caa7390582d4c470df7a02c42fa21d85"
     secret_id      = "cofhe-tee-zk-signer"
   }
 }
