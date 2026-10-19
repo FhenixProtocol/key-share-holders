@@ -1,4 +1,4 @@
-# Shared values for release v1.0.4. Rendered by .github/workflows/release.yml.
+# Shared values for release v1.0.5. Rendered by .github/workflows/release.yml.
 # Do not edit by hand. The next release overwrites this file.
 #
 # Your own project is NOT here. Pass it on the command line:
@@ -16,14 +16,14 @@ source_sha   = "7f93823f135f47b794482b984870b42aef95468d"
 attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-mainnet"
-    image_digest   = "sha256:bf5114a6fe877dbd18d734aeed53c3faee93192f9b7256c5d6e23e1659da63a2"
-    source_sha     = "ffba731ab6162ef9eef471c1abbe6a124b998c06"
+    image_digest   = "sha256:ae85f4d29ea0def0a6748bf75cf319e2236d9800c9fb5b22de5d09319dc79624"
+    source_sha     = "6dd84e784d359cbe81db9cc0a4ecb5b5d28e722d"
     secret_id      = "cofhe-tee-fhe-priv"
   }
   zee-k = {
     gce_project_id = "fhenix-mainnet"
-    image_digest   = "sha256:84591341cea631ec200df493b96f4e4797986f65e43f9d7ed2f5c9d10c5b5d09"
-    source_sha     = "cc3e1d633d6f1231032dd68c22a5f8295c810069"
+    image_digest   = "sha256:88f5a66d658f207b5b503a0b5803c183aca076999d9ed423d974f58bfcee1969"
+    source_sha     = "fe559a98cb2ac8c48c612d54985436f6bf981ea0"
     secret_id      = "cofhe-tee-zk-signer"
   }
 }
