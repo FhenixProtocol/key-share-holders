@@ -45,8 +45,8 @@ variable "skip_provenance_check" {
   description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when a trust root or the registry is unreachable. It is refused on an apply that grants access."
 
   validation {
-    condition     = !var.skip_provenance_check || (!var.grant_read_access && !var.grant_write_access)
-    error_message = "skip_provenance_check is only for a revoke. Pass it with grant_read_access = false and grant_write_access = false, or do not pass it."
+    condition     = !var.skip_provenance_check || (!var.grant_read_access && !var.grant_write_access && !var.grant_reshare_read)
+    error_message = "skip_provenance_check is only for a revoke. Pass it with grant_read_access = false, grant_write_access = false and grant_reshare_read = false, or do not pass it."
   }
 }
 
@@ -73,6 +73,12 @@ variable "grant_write_access" {
   type        = bool
   default     = false
   description = "Defaults FALSE (frozen) so a routine re-apply can never silently re-grant write. Set true ONLY for the partner apply preceding a key ceremony; removes/adds the secretVersionAdder binding (secret + pool kept; reversible). The keygen write is bootstrap-only."
+}
+
+variable "grant_reshare_read" {
+  type        = bool
+  default     = false
+  description = "Defaults FALSE. Set true ONLY for the apply before a reshare that Fhenix asks for: the pinned keygen image may then read both secrets, to split the same key again for a new partner set. Set back to false after the run. grant_read_access = false also removes it."
 }
 
 variable "attested_readers" {
