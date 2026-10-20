@@ -574,7 +574,7 @@ release to apply and which flags to set.
 | Your role in the reshare | Flags for the apply before the run |
 |---|---|
 | You hold a share now, and you stay | `-var grant_reshare_read=true -var grant_write_access=true` |
-| You hold a share now, and you leave | `-var grant_reshare_read=true` |
+| You hold a share now, and you leave | `-var grant_reshare_read=true` (optional: the run needs only the old threshold of shares) |
 | You join | `-var grant_write_access=true` (normal onboarding) |
 
 Plan first. The provider `keygen-reader` already exists, disabled. With

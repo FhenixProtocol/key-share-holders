@@ -129,15 +129,18 @@ image ever gets, and it is off by default:
 grant_reshare_read = true    # ONLY for the apply before a reshare
 ```
 
-When it is `true`, the module creates the provider `keygen-reader` in
-`cofhe-tee-reader-pool`. Its CEL requires `GCP_INTEL_TDX` Confidential Space, the
-`STABLE` support tier and `dbgstat == "disabled-since-boot"`, and pins the Fhenix
-compute project and the keygen `image_digest`. The module gives `secretAccessor` on
-both secrets to that digest-scoped principal. The flag needs a pinned `image_digest`.
-`grant_read_access = false` also removes this grant.
+The provider `keygen-reader` in `cofhe-tee-reader-pool` exists while `image_digest`
+is pinned, and stays **disabled** until this flag is `true`. It is never deleted for a
+toggle: Google reserves a deleted provider id for 30 days, which would block a retry
+or a reshare back. Its CEL is the consumer read-gate CEL: `GCP_INTEL_TDX` Confidential
+Space, the `STABLE` support tier and `dbgstat == "disabled-since-boot"`, pinned to the
+Fhenix compute project and the keygen `image_digest`. When the flag is `true`, the
+module enables the provider and gives `secretAccessor` on both secrets to that
+digest-scoped principal. The flag needs a pinned `image_digest`.
+`grant_read_access = false` disables the provider and removes this grant too.
 
-After the reshare, apply again without the flag. That removes the provider and the two
-bindings.
+After the reshare, apply again without the flag. That disables the provider and
+removes the two bindings.
 
 ## Write access is off by default (you stay in control)
 
