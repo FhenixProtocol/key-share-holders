@@ -583,10 +583,11 @@ one on each secret, for the keygen image digest:
 
 ```bash
 terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT \
-  -var grant_reshare_read=true
+  -var grant_reshare_read=true   # add -var grant_write_access=true if you stay
 #   ~ google_iam_workload_identity_pool_provider.reader["keygen"]   disabled = true -> false
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-fhe-priv"]
 #   + google_secret_manager_secret_iam_member.reshare_read["cofhe-tee-zk-signer"]
+#   + google_secret_manager_secret_iam_member.attested_add[...]   (only if you stay)
 ```
 
 Apply, then run `verify/` with the same flags. It checks the reshare gate and expects

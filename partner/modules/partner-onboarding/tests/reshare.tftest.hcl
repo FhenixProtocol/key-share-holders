@@ -79,6 +79,20 @@ run "read_brake_wins" {
   }
 }
 
+# A WIF pool is soft-deleted for 30 days, so a partner with no consumers must keep
+# the pool, and a disabled keygen gate, while the flag is off.
+run "pool_kept_without_consumers" {
+  command = plan
+  variables {
+    attested_readers   = {}
+    grant_reshare_read = false
+  }
+  assert {
+    condition     = length(google_iam_workload_identity_pool.reader_pool) == 1 && google_iam_workload_identity_pool_provider.reader["keygen"].disabled
+    error_message = "a pinned keygen digest keeps the reader pool and a disabled keygen gate"
+  }
+}
+
 run "flag_needs_a_pinned_digest" {
   command = plan
   variables {

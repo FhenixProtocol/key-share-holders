@@ -91,7 +91,7 @@ data "google_iam_workload_identity_pool_provider" "reader" {
     }
     postcondition {
       condition     = self.disabled == (each.key == "keygen" && !local.reshare_read)
-      error_message = each.key == "keygen" && !local.reshare_read ? "CHECK FAILED: the keygen read gate is enabled, but grant_reshare_read is false.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the ${each.key} read gate is disabled. Reads through it fail.\nDo not change anything. Send this message to Fhenix."
+      error_message = each.key == "keygen" && !local.reshare_read ? "CHECK FAILED: the keygen read gate is enabled, but the reshare read is off (grant_reshare_read or grant_read_access is false).\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the ${each.key} read gate is disabled. Reads through it fail.\nDo not change anything. Send this message to Fhenix."
     }
   }
 }
@@ -139,7 +139,7 @@ data "google_secret_manager_secret_iam_policy" "secret" {
           for m in b.members : m == local.keygen_reader
         ] if b.role == "roles/secretmanager.secretAccessor"
       ])) == local.reshare_read
-      error_message = local.reshare_read ? "CHECK FAILED: the keygen image cannot read the share ${each.key}, but grant_reshare_read is true. The reshare would fail.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the keygen image can still read the share ${each.key}. grant_reshare_read is false.\nDo not change anything. Send this message to Fhenix."
+      error_message = local.reshare_read ? "CHECK FAILED: the keygen image cannot read the share ${each.key}, but grant_reshare_read is true. The reshare would fail.\nDo not change anything. Send this message to Fhenix." : "CHECK FAILED: the keygen image can still read the share ${each.key}, but the reshare read is off (grant_reshare_read or grant_read_access is false).\nDo not change anything. Send this message to Fhenix."
     }
     # Write binding present only while grant_write_access = true (ceremony window).
     postcondition {
