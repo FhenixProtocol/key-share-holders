@@ -45,8 +45,8 @@ variable "skip_provenance_check" {
   description = "EMERGENCY ONLY. Skip the provenance check for this apply, so a revoke works when a trust root or the registry is unreachable. It is refused on an apply that grants access."
 
   validation {
-    condition     = !var.skip_provenance_check || (!var.grant_read_access && !var.grant_write_access)
-    error_message = "skip_provenance_check is only for a revoke. Pass it with grant_read_access = false and grant_write_access = false, or do not pass it."
+    condition     = !var.skip_provenance_check || (!var.grant_read_access && !var.grant_write_access && !var.grant_reshare_read)
+    error_message = "skip_provenance_check is only for a revoke. Pass it with grant_read_access = false, grant_write_access = false and grant_reshare_read = false, or do not pass it."
   }
 }
 
@@ -72,26 +72,45 @@ variable "source_sha" {
 variable "grant_write_access" {
   type        = bool
   default     = false
-  description = "Defaults FALSE (frozen) so a routine re-apply can never silently re-grant write. Set true ONLY for the partner apply preceding a key ceremony; removes/adds the secretVersionAdder binding (secret + pool kept; reversible). The keygen write is bootstrap-only."
+  description = "Defaults FALSE (frozen) so a routine re-apply can never silently re-grant write. Set true ONLY for the partner apply preceding a key ceremony or a reshare; removes/adds the secretVersionAdder binding and the secretmanager.viewer version list (secret + pool kept; reversible). The keygen write is for a ceremony or a reshare only."
+}
+
+variable "grant_reshare_read" {
+  type        = bool
+  default     = false
+  description = "Defaults FALSE. Set true ONLY for the apply before a reshare that Fhenix asks for: the pinned keygen image may then read both secrets, to split the same key again for a new partner set. Set back to false after the run. grant_read_access = false also removes it."
 }
 
 variable "attested_readers" {
   type = map(object({
     gce_project_id = string
-    image_digest   = string
-    source_sha     = string
     secret_id      = string
+    images = list(object({
+      image_digest = string
+      source_sha   = string
+    }))
   }))
   default     = {}
-  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + exact image digest, plus a digest-scoped secretAccessor grant on ONLY its secret_id. source_sha is the commit that digest was built from; it is proven before the apply and never enters the CEL. Empty map = no read path at all."
+  description = "Attested reader consumers (key = consumer name, e.g. \"teecryptor\" / \"zee-k\"): each gets a WIP provider under the partner's reader pool whose CEL pins the consumer's compute project + its listed image digests, plus one digest-scoped secretAccessor grant per digest on ONLY its secret_id. A reader lists 1 or 2 images: 2 only while an upgrade overlaps the old and the new image. source_sha is the commit each digest was built from; it is proven before the apply and never enters the CEL. Empty map = no read path at all."
 
   validation {
-    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^sha256:[0-9a-f]{64}$", r.image_digest))])
-    error_message = "every attested reader must pin \"sha256:\" plus 64 lowercase hex characters."
+    condition     = alltrue([for r in values(var.attested_readers) : length(r.images) >= 1 && length(r.images) <= 2])
+    error_message = "every attested reader lists 1 or 2 images: the current one, plus the previous one while an upgrade is in progress."
   }
 
   validation {
-    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[0-9a-f]{40}$", r.source_sha))])
+    condition     = alltrue(flatten([for r in values(var.attested_readers) : [for i in r.images : can(regex("^sha256:[0-9a-f]{64}$", i.image_digest))]]))
+    error_message = "every attested reader must pin \"sha256:\" plus 64 lowercase hex characters."
+  }
+
+  # A repeated digest would collide on the binding key and the provenance key.
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : length(distinct([for i in r.images : i.image_digest])) == length(r.images)])
+    error_message = "the digests of one attested reader must be distinct."
+  }
+
+  validation {
+    condition     = alltrue(flatten([for r in values(var.attested_readers) : [for i in r.images : can(regex("^[0-9a-f]{40}$", i.source_sha))]]))
     error_message = "every attested reader must name the full 40-character lowercase hex commit its image was built from. The short form is not enough."
   }
 

@@ -133,12 +133,13 @@ resource "google_iam_workload_identity_pool_provider" "provider" {
 # secretVersionAdder appends new versions only, NOT secretAccessor: the enclave
 # cannot read existing key material. No service account is involved.
 #
-# Revocation (var.grant_write_access = false): the partner removes this binding so
-# our attested enclave can no longer add a secret version. The keygen write is
-# bootstrap-only. Once the partner has the key, they revoke and the secret is
-# frozen; any later write attempt by us fails (and is visible/auditable, never
-# silent). The pool/provider and the secret itself are untouched, so it is fully
-# reversible (set back to true and re-apply to re-grant).
+# Revocation (var.grant_write_access = false): the partner removes this binding and
+# the secretmanager.viewer version list (keygen_version_viewer), so our attested
+# enclave can no longer add a secret version. The keygen write is for a ceremony or a reshare
+# only. Once the partner has the key, they revoke and the secret is frozen; any
+# later write attempt by us fails (and is visible/auditable, never silent). The
+# pool/provider and the secret itself are untouched, so it is fully reversible
+# (set back to true and re-apply to re-grant).
 resource "google_secret_manager_secret_iam_member" "attested_add" {
   for_each  = var.grant_write_access ? google_secret_manager_secret.bundle : {}
   project   = var.partner_project_id
@@ -148,33 +149,43 @@ resource "google_secret_manager_secret_iam_member" "attested_add" {
 }
 
 # --- Attested reader pool + providers (partner-enforced reads) ---------------
-# One reader POOL per partner, one PROVIDER per consumer. The keygen write
+# One reader POOL per partner, one PROVIDER per reader. The keygen write
 # pool/provider/CEL above stays UNTOUCHED. That gate is not ours to weaken.
 locals {
-  # dbgstat is pinned for BOTH consumers (tightens zee-k). Per-consumer CEL pins
-  # the CONSUMER's digest + compute project, never satisfiable by the keygen image.
-  reader_condition = { for k, r in var.attested_readers : k => join("\n&& ", [
+  # grant_read_access = false is the read kill switch: it also stops the keygen read.
+  reshare_read = var.grant_reshare_read && var.grant_read_access
+  # One read gate per reader. The keygen gate exists while the keygen image is
+  # pinned, and is enabled only for a reshare the partner approves.
+  # Disabled, not removed, outside a reshare: a deleted provider id stays reserved for 30 days.
+  # Every other gate pins a consumer digest, never the keygen image.
+  reader_gates = merge(
+    { for k, r in var.attested_readers : k => { gce_project_id = r.gce_project_id, image_digests = [for i in r.images : i.image_digest] } },
+    var.image_digest == "" ? {} : { keygen = { gce_project_id = var.service_project_id, image_digests = [var.image_digest] } },
+  )
+  # dbgstat is pinned for every reader (tightens zee-k).
+  reader_condition = { for k, r in local.reader_gates : k => join("\n&& ", [
     "attribute.hwmodel == \"GCP_INTEL_TDX\"",
     "attribute.swname == \"CONFIDENTIAL_SPACE\"",
     "(\",\" + attribute.support_attributes + \",\").contains(\",${var.required_support_attribute},\")",
     "attribute.dbgstat == \"disabled-since-boot\"",
     "attribute.gce_project_id == \"${r.gce_project_id}\"",
-    "attribute.image_digest == \"${r.image_digest}\"",
+    "attribute.image_digest in [${join(", ", [for d in r.image_digests : "\"${d}\""])}]",
   ]) }
 }
 
 resource "google_iam_workload_identity_pool" "reader_pool" {
-  count                     = length(var.attested_readers) > 0 ? 1 : 0
+  count                     = length(local.reader_gates) > 0 ? 1 : 0
   project                   = var.partner_project_id
   workload_identity_pool_id = "cofhe-tee-reader-pool"
   depends_on                = [google_project_service.apis]
 }
 
 resource "google_iam_workload_identity_pool_provider" "reader" {
-  for_each                           = var.attested_readers
+  for_each                           = local.reader_gates
   project                            = var.partner_project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.reader_pool[0].workload_identity_pool_id
   workload_identity_pool_provider_id = "${each.key}-reader"
+  disabled                           = each.key == "keygen" && !local.reshare_read
   oidc {
     issuer_uri        = var.issuer_uri
     allowed_audiences = ["//iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/providers/${each.key}-reader"]
@@ -193,10 +204,52 @@ resource "google_iam_workload_identity_pool_provider" "reader" {
 
 # The mirror of attested_add (above): secretAccessor to the attested consumer
 # principalSet, always digest-scoped (no unpinned fallback). This is the only read path.
-resource "google_secret_manager_secret_iam_member" "attested_read" {
-  for_each  = var.grant_read_access ? var.attested_readers : {}
+# Keyed by reader and digest, so a release that adds or drops a digest touches
+# only that digest's binding.
+resource "google_secret_manager_secret_iam_member" "attested_read_image" {
+  for_each = var.grant_read_access ? merge([
+    for k, r in var.attested_readers : {
+      for i in r.images : "${k}@${i.image_digest}" => { secret_id = r.secret_id, image_digest = i.image_digest }
+    }
+  ]...) : {}
   project   = var.partner_project_id
   secret_id = google_secret_manager_secret.bundle[each.value.secret_id].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${each.value.image_digest}"
+}
+
+# The old per-reader bindings hold the same members as the per-digest ones above.
+# Forget them without a destroy: a destroy would remove the shared member.
+# One time: remove after every partner applies the first list release.
+# FIRST-LIST-RELEASE
+removed {
+  from = google_secret_manager_secret_iam_member.attested_read
+  lifecycle {
+    destroy = false
+  }
+}
+
+# Lets the keygen check each partner's newest version before it writes anything.
+# Metadata only: it cannot read a share.
+resource "google_secret_manager_secret_iam_member" "keygen_version_viewer" {
+  for_each  = var.grant_write_access ? google_secret_manager_secret.bundle : {}
+  project   = var.partner_project_id
+  secret_id = each.value.id
+  role      = "roles/secretmanager.viewer"
+  member    = local.write_principal
+}
+
+# --- Reshare read (keygen image, opt-in) --------------------------------------
+# A reshare rebuilds the live key from the current shares and splits it again for
+# a new partner set. The keygen image reads both secrets through the `keygen` read
+# gate above, which is enabled only while the partner approves the reshare.
+# secretAccessor on both secrets, scoped to the keygen image digest in the reader
+# pool. A consumer gate pins its own digest, so only the keygen gate can mint this
+# principal.
+resource "google_secret_manager_secret_iam_member" "reshare_read" {
+  for_each  = local.reshare_read ? google_secret_manager_secret.bundle : {}
+  project   = var.partner_project_id
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.reader_pool[0].name}/attribute.image_digest/${var.image_digest}"
 }

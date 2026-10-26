@@ -38,27 +38,38 @@ variable "image_digest" {
 
 variable "grant_write_access" {
   type = bool
-  # DEFAULT FALSE, fail safe. The keygen write is bootstrap-only: it is needed
-  # for the one ceremony apply and must be off the rest of the time. Defaulting
+  # DEFAULT FALSE, fail safe. The keygen write is for a ceremony or a reshare
+  # only: it is needed for that apply and must be off the rest of the time. Defaulting
   # to true made "forgot to pass the flag" silently RE-GRANT write access on any
   # later re-apply (e.g. re-pinning a consumer image digest); defaulting to false
   # makes the same mistake revoke instead, which is the safe direction and is
   # visible in the plan as a destroy. Pass `-var grant_write_access=true` on the
-  # partner apply that precedes a ceremony, then drop it.
+  # partner apply that precedes a ceremony or a reshare, then drop it.
   default     = false
-  description = "Whether to grant our attested enclave secretVersionAdder on the secret(s). Defaults FALSE (frozen). Set true ONLY for the partner apply that precedes a key ceremony; the pool/provider and secret are untouched either way, so it is fully reversible."
+  description = "Whether to grant our attested enclave secretVersionAdder and the secretmanager.viewer version list on the secret(s). Defaults FALSE (frozen). Set true ONLY for the partner apply that precedes a key ceremony or a reshare; the pool/provider and secret are untouched either way, so it is fully reversible."
 }
 
 variable "attested_readers" {
   type = map(object({       # key = consumer name: "teecryptor" | "zee-k"
     gce_project_id = string # consumer's COMPUTE project (fhenix-compute-project)
-    image_digest   = string # consumer's image digest, REQUIRED non-empty (guardrail)
     secret_id      = string # the ONE secret this consumer may read
+    images = list(object({  # 1 or 2: two only while an upgrade overlaps the old and the new image
+      image_digest = string # consumer's image digest, REQUIRED non-empty (guardrail)
+    }))
   }))
   default = {}
   validation {
-    condition     = alltrue([for r in values(var.attested_readers) : can(regex("^sha256:[a-f0-9]{64}$", r.image_digest))])
+    condition     = alltrue([for r in values(var.attested_readers) : length(r.images) >= 1 && length(r.images) <= 2])
+    error_message = "every attested reader lists 1 or 2 images: the current one, plus the previous one while an upgrade is in progress."
+  }
+  validation {
+    condition     = alltrue(flatten([for r in values(var.attested_readers) : [for i in r.images : can(regex("^sha256:[a-f0-9]{64}$", i.image_digest))]]))
     error_message = "every attested reader must pin a canonical sha256 image digest (never unpinned: the reader CEL must not be satisfiable by the keygen image)."
+  }
+  # A repeated digest would collide on the binding key.
+  validation {
+    condition     = alltrue([for r in values(var.attested_readers) : length(distinct([for i in r.images : i.image_digest])) == length(r.images)])
+    error_message = "the digests of one attested reader must be distinct."
   }
   validation {
     condition     = alltrue([for r in values(var.attested_readers) : can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", r.gce_project_id))])
@@ -72,14 +83,35 @@ variable "attested_readers" {
     condition     = alltrue([for k in keys(var.attested_readers) : can(regex("^[a-z][a-z0-9-]{2,20}$", k))])
     error_message = "consumer keys become provider ids (<key>-reader); keep them short lowercase slugs."
   }
+  validation {
+    condition     = !contains(keys(var.attested_readers), "keygen")
+    error_message = "\"keygen\" is reserved for the reshare read gate."
+  }
 }
 
 # Revocable like grant_write_access, but the DEFAULT is the opposite: reads are the
 # steady state (consumers re-read on every boot), so this defaults TRUE and
-# revoking is an emergency brake, whereas write is bootstrap-only and defaults off.
+# revoking is an emergency brake, whereas write is for a ceremony or a reshare only and defaults off.
 variable "grant_read_access" {
   type    = bool
   default = true
+}
+
+# A reshare splits the live key again for a new partner set. The keygen image
+# must read the current shares for that, so this is the one read path the keygen
+# image ever gets. Default false, like grant_write_access: a forgotten flag
+# revokes. grant_read_access = false (the emergency brake) also removes it.
+variable "grant_reshare_read" {
+  type        = bool
+  default     = false
+  description = "Set true ONLY for the apply before a reshare that Fhenix asks for: the pinned keygen image may then read both secrets. Set back to false after the run."
+
+  # The read is scoped to the keygen image digest. Unpinned, it would reach any
+  # attested workload in the service project.
+  validation {
+    condition     = !var.grant_reshare_read || var.image_digest != ""
+    error_message = "grant_reshare_read needs image_digest: the reshare read is scoped to the pinned keygen image."
+  }
 }
 
 variable "pool_id" {
