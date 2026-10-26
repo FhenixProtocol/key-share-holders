@@ -22,24 +22,21 @@
 # module. See the comment on `attested_readers` in main.tf.
 
 locals {
-  # image key => the two values that change per release. Keys match the ones in
+  # "<image>@<digest hex>" => the pinned pair. A reader can pin two digests, so
+  # the image name alone is not unique. The image names match the ones in
   # verify-image.sh: keygen, teecryptor, zee-k.
   #
   # An empty image_digest means the keygen write gate is unpinned (early dev),
   # so there is no digest to prove and that check is skipped.
   all_pinned_images = merge(
     var.image_digest == "" ? {} : {
-      keygen = {
-        digest = var.image_digest
-        commit = var.source_sha
-      }
+      "keygen@${trimprefix(var.image_digest, "sha256:")}" = { image = "keygen", digest = var.image_digest, commit = var.source_sha }
     },
-    {
-      for k, r in var.attested_readers : k => {
-        digest = r.image_digest
-        commit = r.source_sha
+    merge([for k, r in var.attested_readers : {
+      for i in r.images : "${k}@${trimprefix(i.image_digest, "sha256:")}" => {
+        image = k, digest = i.image_digest, commit = i.source_sha
       }
-    },
+    }]...),
   )
 
   # EVERY pinned digest is proven on EVERY apply. A digest is written into a CEL
@@ -62,7 +59,7 @@ data "external" "provenance" {
     "bash",
     "${path.module}/verify-image.sh",
     "--terraform",
-    each.key,
+    each.value.image,
     each.value.digest,
     each.value.commit,
   ]
