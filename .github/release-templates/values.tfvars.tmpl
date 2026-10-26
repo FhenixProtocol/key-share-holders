@@ -12,18 +12,22 @@ service_project_id = "__COMPUTE_PROJECT__"
 image_digest = "__KEYGEN_DIGEST__"
 source_sha   = "__KEYGEN_SHA__"
 
-# Only these exact consumer images may READ your share, each on ONE secret.
+# Only these exact consumer images may READ your share, each on ONE secret. The
+# first image is this release's. A second one, marked "previous", is the previous
+# release's, kept while an upgrade is in progress.
 attested_readers = {
   teecryptor = {
     gce_project_id = "__COMPUTE_PROJECT__"
-    image_digest   = "__TEECRYPTOR_DIGEST__"
-    source_sha     = "__TEECRYPTOR_SHA__"
     secret_id      = "cofhe-tee-fhe-priv"
+    images = [
+__TEECRYPTOR_IMAGES__
+    ]
   }
   zee-k = {
     gce_project_id = "__COMPUTE_PROJECT__"
-    image_digest   = "__ZEEK_DIGEST__"
-    source_sha     = "__ZEEK_SHA__"
     secret_id      = "cofhe-tee-zk-signer"
+    images = [
+__ZEEK_IMAGES__
+    ]
   }
 }

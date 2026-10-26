@@ -36,6 +36,11 @@ on:
         description: "zee-k source commit (full 40-hex): empty = unchanged"
         required: false
         default: ""
+      keep_previous_readers:
+        description: "true: keep the previous release's reader digest next to the new one, while an upgrade is in progress. false: the upgrade finished and works; remove the previous digests."
+        type: boolean
+        required: false
+        default: true
   pull_request:
     types: [closed]
 
@@ -55,6 +60,7 @@ jobs:
       IN_TEECRYPTOR_SHA: ${{ inputs.teecryptor_sha }}
       IN_ZEEK_DIGEST: ${{ inputs.zeek_digest }}
       IN_ZEEK_SHA: ${{ inputs.zeek_sha }}
+      KEEP_PREVIOUS_READERS: ${{ inputs.keep_previous_readers }}
       COMPUTE_PROJECT: ${{ vars.FHENIX_COMPUTE_PROJECT }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -62,107 +68,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # An unchanged image should not be retyped. Retyping is how a digest and a
-      # commit drift apart, and the previous tag already holds the proven pair.
-      # Anything left empty is read back from that tag's values.tfvars.
-      - name: Resolve each pin, carrying forward what did not change
-        run: |
-          set -euo pipefail
-          # No pipe: `git tag | head` takes SIGPIPE on a repo with many tags, and
-          # `pipefail` turns that into a silent abort with no output at all.
-          prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
-          prev_file=""
-          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
-            prev_file=prev-values.tfvars
-          else
-            prev_tag=""
-          fi
-
-          # pins.awk prints "<key> <value>" for every pin in a rendered var-file.
-          lookup() {
-            [[ -n "$prev_file" ]] || return 0
-            awk -f .github/scripts/pins.awk "$prev_file" | awk -v k="$1" '$1 == k { print $2 }'
-          }
-
-          # Sets RESOLVED and ORIGIN. Called directly, never in a subshell, so a
-          # missing value stops the run here instead of rendering a broken file.
-          resolve() {
-            local label="$1" key="$2" supplied="$3"
-            if [[ -n "$supplied" ]]; then
-              RESOLVED="$supplied"; ORIGIN="supplied"; return 0
-            fi
-            RESOLVED="$(lookup "$key")"
-            if [[ -z "$RESOLVED" ]]; then
-              if [[ -n "$prev_tag" ]]; then
-                echo "::error::$label is empty, and $prev_tag does not carry it. Fill it in."
-              else
-                echo "::error::$label is empty and there is no previous release to carry it from. Fill it in."
-              fi
-              exit 1
-            fi
-            ORIGIN="carried from $prev_tag"
-          }
-
-          {
-            echo "| Pin | Value | Source |"
-            echo "|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          emit() {  # label, pins key, supplied value, env var name, digest|sha
-            resolve "$1" "$2" "$3"
-            case "$5" in
-              digest) [[ "$RESOLVED" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::$1 is not a canonical digest: '$RESOLVED'"; exit 1; } ;;
-              sha)    [[ "$RESOLVED" =~ ^[0-9a-f]{40}$ ]]        || { echo "::error::$1 is not a full 40-hex commit: '$RESOLVED'"; exit 1; } ;;
-            esac
-            echo "$4=$RESOLVED" >> "$GITHUB_ENV"
-            echo "| $1 | \`$RESOLVED\` | $ORIGIN |" >> "$GITHUB_STEP_SUMMARY"
-          }
-
-          # 6. Half a pair is almost always a half-filled form. Carrying the old
-          # commit next to a new digest fails later as "the proof does not hold",
-          # which reads like a compromised image rather than a typo.
-          pair() {  # label, digest, sha
-            if [[ -n "$2" && -z "$3" ]] || [[ -z "$2" && -n "$3" ]]; then
-              echo "::error::fill both the digest and the commit for $1, or leave both empty to carry the pair forward."
-              exit 1
-            fi
-          }
-          pair keygen     "$IN_KEYGEN_DIGEST"     "$IN_KEYGEN_SHA"
-          pair teecryptor "$IN_TEECRYPTOR_DIGEST" "$IN_TEECRYPTOR_SHA"
-          pair zee-k      "$IN_ZEEK_DIGEST"       "$IN_ZEEK_SHA"
-
-          emit "keygen digest"     keygen         "$IN_KEYGEN_DIGEST"     KEYGEN_DIGEST     digest
-          emit "keygen commit"     keygen-sha     "$IN_KEYGEN_SHA"        KEYGEN_SHA        sha
-          emit "teecryptor digest" teecryptor     "$IN_TEECRYPTOR_DIGEST" TEECRYPTOR_DIGEST digest
-          emit "teecryptor commit" teecryptor-sha "$IN_TEECRYPTOR_SHA"    TEECRYPTOR_SHA    sha
-          emit "zee-k digest"      zee-k          "$IN_ZEEK_DIGEST"       ZEEK_DIGEST       digest
-          emit "zee-k commit"      zee-k-sha      "$IN_ZEEK_SHA"          ZEEK_SHA          sha
-
-          rm -f prev-values.tfvars
-
-      - name: Reject a malformed tag, digest, commit or compute project
+      - name: Reject a malformed tag or compute project, and a tag that exists
         run: |
           set -euo pipefail
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::tag must be vX.Y.Z, got '$TAG'"
             exit 1
           fi
-          for d in "$KEYGEN_DIGEST" "$TEECRYPTOR_DIGEST" "$ZEEK_DIGEST"; do
-            if ! [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-              echo "::error::not a canonical digest: '$d'"
-              exit 1
-            fi
-          done
-          # The partner proves digest+commit together against the public
-          # attestation before it pins anything. A short SHA never matches the
-          # attested source digest, so reject one here rather than at the
-          # partner's plan.
-          for c in "$KEYGEN_SHA" "$TEECRYPTOR_SHA" "$ZEEK_SHA"; do
-            if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "::error::not a full 40-hex commit sha: '$c'"
-              exit 1
-            fi
-          done
           if [[ -z "$COMPUTE_PROJECT" ]]; then
             echo "::error::repository variable FHENIX_COMPUTE_PROJECT is not set"
             exit 1
@@ -171,6 +83,31 @@ jobs:
             echo "::error::tag $TAG already exists; a tag is never moved"
             exit 1
           fi
+
+      # render-readers.sh carries each empty pin forward from the previous tag,
+      # adds the previous reader digest while keep_previous_readers is true,
+      # rejects a malformed digest or commit, and renders both files with the
+      # diff against the previous tag. CI runs the same script on fixtures.
+      - name: Resolve each pin and render values.tfvars and EXPECTED.md
+        run: |
+          set -euo pipefail
+          # No pipe: `git tag | head` takes SIGPIPE on a repo with many tags, and
+          # `pipefail` turns that into a silent abort with no output at all.
+          prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
+          prev_file=""
+          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > "$RUNNER_TEMP/prev-values.tfvars" 2>/dev/null; then
+            prev_file="$RUNNER_TEMP/prev-values.tfvars"
+          else
+            prev_tag=""
+          fi
+          mkdir -p "$RUNNER_TEMP/render"
+          PREV_TAG="$prev_tag" PREV_FILE="$prev_file" \
+            .github/scripts/render-readers.sh "$RUNNER_TEMP/render"
+          cp "$RUNNER_TEMP/render/values.tfvars" "$RUNNER_TEMP/render/EXPECTED.md" .
+          echo "--- values.tfvars"
+          cat values.tfvars
+          echo "--- EXPECTED.md"
+          cat EXPECTED.md
 
       # The same check every partner's apply runs. A correctly shaped but wrong
       # source_sha passes the regex above, ships in the tag, and then fails at
@@ -188,7 +125,8 @@ jobs:
       #
       # A pin that carried forward already has its bundle in the checkout, so the
       # script uses that copy and writes nothing. The file name carries the
-      # digest, so nothing is ever overwritten in place.
+      # digest, so nothing is ever overwritten in place. Every rendered pair is
+      # proved, the kept previous reader digest too: a partner proves it again.
       - name: Prove each digest came from the commit beside it, and keep the proof
         env:
           FHENIX_PROVENANCE_TOKEN: ${{ github.token }}
@@ -199,15 +137,16 @@ jobs:
           # and the PR step fails after the commit sequence has started. The
           # directory is committed today, but nothing else guarantees it.
           mkdir -p partner/bundles
-          partner/verify-image.sh keygen     "$KEYGEN_DIGEST"     "$KEYGEN_SHA"
-          partner/verify-image.sh teecryptor "$TEECRYPTOR_DIGEST" "$TEECRYPTOR_SHA"
-          partner/verify-image.sh zee-k      "$ZEEK_DIGEST"       "$ZEEK_SHA"
+          keep=" "
+          while read -r image digest sha; do
+            partner/verify-image.sh "$image" "$digest" "$sha"
+            keep="$keep$image-${digest#sha256:} "
+          done < "$RUNNER_TEMP/render/pairs"
 
           # Drop the bundles of digests this release no longer pins. Without this
           # the directory keeps every digest we ever shipped. Match the whole
           # name, image included, so a right digest under a wrong image name is
           # dropped too. verify-image.sh would never read that file.
-          keep=" keygen-${KEYGEN_DIGEST#sha256:} teecryptor-${TEECRYPTOR_DIGEST#sha256:} zee-k-${ZEEK_DIGEST#sha256:} "
           for f in partner/bundles/*.jsonl; do
             [[ -e "$f" ]] || continue
             name="${f##*/}"
@@ -217,45 +156,6 @@ jobs:
             esac
           done
           ls -l partner/bundles
-
-      - name: Render values.tfvars and EXPECTED.md
-        run: |
-          set -euo pipefail
-          render() {
-            sed -e "s|__TAG__|$TAG|g" \
-                -e "s|__COMPUTE_PROJECT__|$COMPUTE_PROJECT|g" \
-                -e "s|__KEYGEN_DIGEST__|$KEYGEN_DIGEST|g" \
-                -e "s|__KEYGEN_SHA__|$KEYGEN_SHA|g" \
-                -e "s|__TEECRYPTOR_DIGEST__|$TEECRYPTOR_DIGEST|g" \
-                -e "s|__TEECRYPTOR_SHA__|$TEECRYPTOR_SHA|g" \
-                -e "s|__ZEEK_DIGEST__|$ZEEK_DIGEST|g" \
-                -e "s|__ZEEK_SHA__|$ZEEK_SHA|g" \
-                -e "s|__KEYGEN_DIGEST_HEX__|${KEYGEN_DIGEST#sha256:}|g" \
-                -e "s|__TEECRYPTOR_DIGEST_HEX__|${TEECRYPTOR_DIGEST#sha256:}|g" \
-                -e "s|__ZEEK_DIGEST_HEX__|${ZEEK_DIGEST#sha256:}|g" \
-                "$1"
-          }
-          render .github/release-templates/values.tfvars.tmpl > values.tfvars
-          # Compare against the previous tag so EXPECTED.md states the exact
-          # before/after, not just a shape. Pure git - no credentials needed.
-          prev_tag="$(git for-each-ref --sort=-v:refname --count=1 --format='%(refname:short)' 'refs/tags/v*')"
-          prev_file=""
-          if [[ -n "$prev_tag" ]] && git show "$prev_tag:values.tfvars" > prev-values.tfvars 2>/dev/null; then
-            prev_file=prev-values.tfvars
-          else
-            prev_tag=""
-          fi
-          .github/scripts/render-diff.sh "$prev_tag" "$prev_file" values.tfvars "$TAG" > diff.md
-
-          render .github/release-templates/EXPECTED.md.tmpl \
-            | sed -e '/__PREVIOUS_DIFF__/r diff.md' \
-                  -e '/__PREVIOUS_DIFF__/d' \
-            > EXPECTED.md
-          rm -f diff.md prev-values.tfvars
-          echo "--- values.tfvars"
-          cat values.tfvars
-          echo "--- EXPECTED.md"
-          cat EXPECTED.md
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -290,13 +190,9 @@ jobs:
           set -euo pipefail
           printf '%s\n' \
             "## $TAG - $(date -u +%Y-%m-%d)" \
-            "" \
-            "| Image | Digest | Source commit |" \
-            "|---|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
             "" > entry.md
+          cat "$RUNNER_TEMP/render/pairs.md" >> entry.md
+          echo >> entry.md
           awk 'NR==FNR { e = e $0 ORS; next }
                !done && /^## / { printf "%s", e; done = 1 }
                { print }' entry.md CHANGELOG.md > CHANGELOG.new
@@ -309,17 +205,16 @@ jobs:
           printf '%s\n' \
             "Rendered by \`release.yml\`. Merging this PR tags \`main\` as \`$TAG\`" \
             "and creates the GitHub Release." \
+            "" > body.md
+          cat "$RUNNER_TEMP/render/pairs.md" >> body.md
+          printf '%s\n' \
             "" \
-            "| Image | Digest | Source commit |" \
-            "|---|---|---|" \
-            "| keygen | \`$KEYGEN_DIGEST\` | \`$KEYGEN_SHA\` |" \
-            "| teecryptor | \`$TEECRYPTOR_DIGEST\` | \`$TEECRYPTOR_SHA\` |" \
-            "| zee-k | \`$ZEEK_DIGEST\` | \`$ZEEK_SHA\` |" \
+            "Previous reader digests kept: \`$KEEP_PREVIOUS_READERS\`." \
             "" \
             "Compute project: \`$COMPUTE_PROJECT\`." \
             "" \
             "Review \`values.tfvars\` and \`EXPECTED.md\` against the build outputs" \
-            "before merging." > body.md
+            "before merging." >> body.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="release/$TAG"
