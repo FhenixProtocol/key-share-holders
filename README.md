@@ -44,6 +44,7 @@ git log -p v0.1.0..v0.2.0 -- values.tfvars
 
 ```
 PARTNER_GUIDE.md   the onboarding guide. Start here.
+RESHARE.md         a reshare: the steps, only when Fhenix asks
 CHANGELOG.md       one entry per tag: what changed, which digests
 values.tfvars      the shared values of the current release (added at the first real release)
 EXPECTED.md        what your plan and verify must show for those values
@@ -57,15 +58,16 @@ partner/           steps 5 to 6: your two secrets and the attestation gates on t
   modules/partner-onboarding/   the module. partner/ is a thin root around it.
 ```
 
-## What `partner/` creates (about 15 resources, 0 destroys)
+## What `partner/` creates (about 16 resources, 0 destroys)
 
 | Resource | Purpose |
 |---|---|
 | 2 Secret Manager secrets `cofhe-tee-fhe-priv`, `cofhe-tee-zk-signer` | Your share of the FHE private key (with the decrypt signer) and of the zk signer. Both have `prevent_destroy`. |
 | Workload Identity pool + provider `cofhe-tee-keygen-pool` / `-provider` | The **write** gate. The CEL requires genuine Intel TDX Confidential Space, the STABLE image tier, the Fhenix compute project, and the exact keygen image digest. |
-| Reader pool + 2 providers `cofhe-tee-reader-pool` / `teecryptor-reader`, `zee-k-reader` | The **read** gates. Same CEL, plus `dbgstat == "disabled-since-boot"`, pinned to the exact image digest of each consumer. |
+| Reader pool + providers `cofhe-tee-reader-pool` / `teecryptor-reader`, `zee-k-reader`, and `keygen-reader` (disabled outside a reshare) | The **read** gates. Same CEL, plus `dbgstat == "disabled-since-boot"`, pinned to the 1 or 2 listed image digests of each reader. Two digests exist only while an upgrade is in progress. |
 | `secretVersionAdder` × 2 → attested keygen principal | Append-only write. Present only while `grant_write_access = true` (the ceremony window). |
-| `secretAccessor` × 2 → attested consumer principals | Each consumer image can read **only** its own secret. |
+| `secretmanager.viewer` × 2 → attested keygen principal | Lists the version numbers before a write. Metadata only. Present only while `grant_write_access = true`. |
+| `secretAccessor` → attested consumer principals, one per reader image | Each consumer image can read **only** its own secret. |
 | Secret Manager Data Access audit config | Each read of a share is logged in your project, with the identity that made it. |
 
 The exact CEL strings are in `partner/modules/partner-onboarding/main.tf` (`locals`).
@@ -108,9 +110,12 @@ terraform -chdir=verify init -backend=false -input=false \
 terraform output -json > <your-project>-outputs.json   # step 7: send this file to us
 ```
 
-After the ceremony, you apply again with the next tag, whose `values.tfvars` has no
-`grant_write_access = true`. The plan shows exactly two destroys (the write bindings).
-Your secrets are then frozen.
+After the ceremony, you apply again without `-var grant_write_access=true`. The plan
+shows exactly four destroys: the write and the version-list bindings. Your secrets are
+then frozen.
+
+Always apply from a release tag, never from `main`. See
+[Apply a later release](PARTNER_GUIDE.md#apply-a-later-release).
 
 ## The one value you supply
 

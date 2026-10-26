@@ -15,12 +15,13 @@ key share into the partner's Secret Manager. A CEL on our attestation gates that
 | `google_iam_workload_identity_pool` `cofhe-tee-reader-pool` + one `_provider` per consumer | OIDC trust for the token of each consumer enclave. |
 | CEL `attribute_condition` on each provider | The gate. Only our genuine attested image, from our project, can get a token. |
 | `google_project_iam_audit_config` (Secret Manager) | Data Access audit logs. Each read of a share is logged in the partner's project. |
-| `google_secret_manager_secret_iam_member` | Gives `secretVersionAdder` (keygen) and `secretAccessor` (each consumer, on its own secret) **directly** to attested federated principals. No service account. |
+| `google_secret_manager_secret_iam_member` | Gives `secretVersionAdder` and `secretmanager.viewer` (keygen, while `grant_write_access = true`) and `secretAccessor` (each consumer image, on its own secret; the keygen image only while `grant_reshare_read = true`) **directly** to attested federated principals. No service account. |
 
 The module does **not** create a bucket. Public material (ServerKey, CRS,
 CompactPublicKey) is in *our* GCS bucket, not in the partner's project. The keygen
-grant is `secretVersionAdder` (append only). It is never `secretAccessor`. The
-enclave can add versions. It cannot read key material.
+write grant is `secretVersionAdder` (append only). The enclave can add versions. It
+cannot read key material, except during a reshare that you turn on with
+`grant_reshare_read` (see below).
 
 ## Usage
 
@@ -46,7 +47,7 @@ output "onboarding" {
 
 ## Inputs
 
-The module has 11 input variables. [`variables.tf`](variables.tf) documents each
+The module has 12 input variables. [`variables.tf`](variables.tf) documents each
 one: its type, default, and purpose. [`../../terraform.tfvars.example`](../../terraform.tfvars.example)
 shows a filled-in example. The sections below explain the variables that carry a
 safety decision: the image pin, attested reads, and write access.
@@ -87,20 +88,22 @@ gcloud iam workload-identity-pools providers describe cofhe-tee-keygen-provider 
 
 ## Attested read access (partner-enforced)
 
-> The root passes a `source_sha` beside each `image_digest`. It is proof material for
+> The root passes a `source_sha` beside each consumer `image_digest`. It is proof material for
 > the provenance gate in `partner/provenance.tf` and is stripped before it reaches this
 > module, because the CEL pins the digest only. That is why it does not appear below.
 
 `attested_readers` is the only read path. The **partner's own** IAM gates each read on
 the TDX Confidential Space attestation of the consumer. No service account is trusted.
-One entry per consumer:
+One entry per consumer, with a list of 1 or 2 images:
 
 ```hcl
 attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-compute-project"  # the consumer's COMPUTE project
-    image_digest   = "sha256:ab12..."            # the consumer's image. REQUIRED, always pinned.
     secret_id      = "cofhe-tee-fhe-priv"
+    images = [                                  # 1, or 2 while an upgrade is in progress
+      { image_digest = "sha256:ab12..." },      # REQUIRED, always pinned
+    ]
   }
 }
 ```
@@ -108,30 +111,63 @@ attested_readers = {
 The module creates one reader pool (`cofhe-tee-reader-pool`) per partner, and one
 provider per consumer (`<consumer>-reader`). The CEL of each provider requires genuine
 `GCP_INTEL_TDX` Confidential Space, the `STABLE` support tier, and
-`dbgstat == "disabled-since-boot"`. It pins the compute project and the exact image
-digest of the **consumer**. The keygen image, or any other workload, cannot satisfy it.
-The `secretAccessor` grant goes to the digest-scoped attested principal, on **only**
-that consumer's secret. There is no unpinned fallback. A new consumer image needs a
-partner re-apply with the new digest. This is explicit consent for each image, the same
-as for the keygen write pin.
+`dbgstat == "disabled-since-boot"`. It pins the compute project and the listed image
+digests of the **consumer**: `attribute.image_digest in [...]`. The keygen image, or any
+other workload, cannot satisfy it. Each digest gets its own `secretAccessor` grant
+(`attested_read_image`, keyed `<consumer>@<digest>`) to the digest-scoped attested
+principal, on **only** that consumer's secret. There is no unpinned fallback. A new
+consumer image needs a partner re-apply with the new digest. This is explicit consent
+for each image, the same as for the keygen write pin.
+
+The list has 1 or 2 items, and Terraform rejects 3 or a repeated digest. Two digests
+exist only while an upgrade is in progress: the old consumer and the new consumer both
+read. The provider id does not change, so the consumer configuration does not change.
+
+<!-- FIRST-LIST-RELEASE -->
+**The first release with lists** moves `attested_read` to `attested_read_image`. See
+[The first release with image lists](../../../PARTNER_GUIDE.md#the-first-release-with-image-lists-one-time).
 
 `grant_read_access = false` removes all attested read bindings. The pool, the
 providers and the secrets stay. This is reversible.
 
-## Write access is off by default (you stay in control)
+## Reshare read is off by default
 
-Key creation is **bootstrap only**. So `grant_write_access` **defaults to `false`**:
-at the start, our enclave cannot add a secret version. Write access is a deliberate
-action for each ceremony:
+A reshare gives the shares to a new partner set and keeps the same key. The keygen
+image must read the current shares for that. This is the only read path the keygen
+image ever gets, and it is off by default:
 
 ```hcl
-grant_write_access = true    # ONLY for the apply before a key ceremony
+grant_reshare_read = true    # ONLY for the apply before a reshare
 ```
 
+The provider `keygen-reader` in `cofhe-tee-reader-pool` exists while `image_digest`
+is pinned, and stays **disabled** until this flag is `true`. It is never deleted for a
+toggle: Google reserves a deleted provider id for 30 days, which would block a retry
+or a reshare back. Its CEL is the consumer read-gate CEL above, pinned to the Fhenix
+compute project and the keygen `image_digest`. The flag needs a pinned `image_digest`.
+It enables the provider and gives `secretAccessor` on both secrets to that
+digest-scoped principal. After the reshare, apply without the flag: that disables the
+provider and removes the two bindings. `grant_read_access = false` does the same.
+
+## Write access is off by default (you stay in control)
+
+Key writes happen only in a ceremony or a reshare. So `grant_write_access` **defaults
+to `false`**: at the start, our enclave cannot add a secret version. Write access is a
+deliberate action for each ceremony and each reshare:
+
+```hcl
+grant_write_access = true    # ONLY for the apply before a key ceremony or a reshare
+```
+
+The same flag also gives the keygen write principal the predefined
+`roles/secretmanager.viewer` on both secrets. The keygen lists the version numbers
+before it writes, so it can write at an exact number. The role reads metadata only,
+never a payload.
+
 After the ceremony, apply again without that flag. See `PARTNER_GUIDE.md` step 11. The
-default is `false`, so this removes the
-`secretVersionAdder` binding. After that, a write attempt by our enclave fails with a
-permission error. The error is visible in our logs and in your audit log. It is never a
+default is `false`, so this removes the `secretVersionAdder` and the
+`secretmanager.viewer` bindings. After that, a write attempt by our enclave fails with
+a permission error. The error is visible in our logs and in your audit log. It is never a
 silent success. The secret, its versions, and the pool and provider do not change. The
 action is fully reversible.
 
@@ -165,14 +201,14 @@ terraform -chdir=verify plan -input=false \
 `verify/` has no `resource` blocks. Its data sources read the live write CEL, the live
 read CELs, and the IAM policy of each secret. Its `postcondition`s check:
 
-- each gate pins the expected digest, the compute project, and TDX Confidential Space
+- each gate pins the expected digests, the compute project, and TDX Confidential Space
   (the read gates also `dbgstat`);
 - each member on a share is an attested `principalSet`. There is no `user:` and no
   `serviceAccount:`;
-- each secret has exactly one `secretAccessor`, and it is the digest-scoped consumer
-  for that secret;
-- the `secretVersionAdder` binding is present if, and only if,
-  `grant_write_access = true`.
+- each secret has exactly one `secretAccessor` binding, and its members are the listed
+  digest-scoped consumer images for that secret;
+- the `secretVersionAdder` binding, and the `secretmanager.viewer` binding of the keygen
+  write principal, are present if, and only if, `grant_write_access = true`.
 
 Success prints a `SUCCESS` output block. A failure is a hard error. Each error ends
 with a `CHECK FAILED:` line in plain language, with the unexpected value. This replaces
@@ -203,7 +239,7 @@ config of other services in the project does not change.
 - **Not pinned (`image_digest = ""`):** no partner action when we rebuild. Development
   only.
 - **Pinned:** a new image has a new digest. The partner applies again with the new
-  `image_digest`. This is the point: explicit consent for each image. For a rollover
-  with no gap, pin a list for a short time (old and new), deploy, then remove the old
-  one. (The module takes one digest today. Multi-digest rollover is a future
-  enhancement.)
+  digest. This is the point: explicit consent for each image.
+- **Consumer rollover with no gap:** release tag A lists the old and the new digest.
+  Fhenix deploys the new consumer. Release tag B lists the new digest only. The keygen
+  write gate keeps one digest: a keygen image runs once.
