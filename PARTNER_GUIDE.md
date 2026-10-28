@@ -186,11 +186,14 @@ terraform init -reconfigure -input=false \
   && terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
-**Correct result:** 15 resources to add. Zero to change. Zero to destroy. Two more are
-added if you apply with `-var grant_write_access=true`, which we ask for once, in [step 8](#8-grant-write-access).
+**Correct result:** 16 resources to add. Zero to change. Zero to destroy. Four more are
+added if you apply with `-var grant_write_access=true`. We ask for it in
+[step 8](#8-grant-write-access), and again only for a reshare.
+The count assumes one image per reader. Each second image in `values.tfvars` adds one
+read binding.
 
 ```
-Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=true
+Plan: 16 to add, 0 to change, 0 to destroy.      # 20 with grant_write_access=true
 
   # google_project_service.apis            -> secretmanager, iam, iamcredentials, sts, cloudresourcemanager
   # google_project_iam_audit_config.secretmanager   -> Data Access logs for Secret Manager
@@ -198,12 +201,14 @@ Plan: 15 to add, 0 to change, 0 to destroy.      # 17 with grant_write_access=tr
   # google_iam_workload_identity_pool.pool          -> "cofhe-tee-keygen-pool"
   # google_iam_workload_identity_pool_provider      -> "cofhe-tee-keygen-provider"
   # google_iam_workload_identity_pool.reader_pool   -> "cofhe-tee-reader-pool"
-  # google_iam_workload_identity_pool_provider.reader -> "teecryptor-reader", "zee-k-reader"
-  # google_secret_manager_secret_iam_member.attested_add   -> secretVersionAdder  (x2, only with grant_write_access=true)
-  # google_secret_manager_secret_iam_member.attested_read  -> secretAccessor      (x2)
+  # google_iam_workload_identity_pool_provider.reader -> "teecryptor-reader", "zee-k-reader",
+  #                                                       "keygen-reader" (disabled)
+  # google_secret_manager_secret_iam_member.attested_add          -> secretVersionAdder   (x2, only with grant_write_access=true)
+  # google_secret_manager_secret_iam_member.keygen_version_viewer -> secretmanager.viewer (x2, only with grant_write_access=true)
+  # google_secret_manager_secret_iam_member.attested_read_image   -> secretAccessor       (one per reader image)
 
 Changes to Outputs:
-  + provenance_verified = { keygen = {...}, teecryptor = {...}, zee-k = {...} }
+  + provenance_verified = { "keygen@<hex>" = {...}, "teecryptor@<hex>" = {...}, "zee-k@<hex>" = {...} }
 ```
 
 A passing provenance check prints nothing. That `provenance_verified` block is how you
@@ -214,10 +219,10 @@ know it ran, and it names the commit proven for each image.
 > - a `google_storage_bucket`;
 > - a resource in a project that is not yours;
 > - fewer than two secrets;
-> - an `attested_read` binding on the wrong secret.
+> - an `attested_read_image` binding on the wrong secret.
 >
 > On this first run a destroy must not appear: there is nothing yet to destroy. A later
-> release may legitimately destroy a read binding when an image rotates. See
+> release may legitimately destroy a read binding when an upgrade ends. See
 > *Apply a later release*.
 
 **If your plan matches, you are done here. Go on to step 6.** The rest of this step is
@@ -275,12 +280,15 @@ including in [step 11](#11-revoke-write-access).
   + SUCCESS = {
       + partner_project      = "$PROJECT"
       + write_gate_pins      = "sha256:…"
-      + read_gates_pin       = { teecryptor = "sha256:…", zee-k = "sha256:…" }
+      + read_gates_pin       = { teecryptor = ["sha256:…"], zee-k = ["sha256:…"] }
+      + reshare_read_granted = false
       + write_access_granted = false
     }
 ```
 
-`write_access_granted` is `false` here. It becomes `true` only between steps 8 and 11.
+Each reader shows a list of 1 or 2 images. Two images are normal while an upgrade is in
+progress. `write_access_granted` is `false` here. It becomes `true` only between steps 8
+and 11.
 
 **If you see that block, you are done here. Go on to step 7.** The rest of this step is
 troubleshooting.
@@ -319,9 +327,9 @@ You send this file; we do not fetch it.)*
 
 ## 8. Grant write access
 
-**Do this only when we ask.** We ask once, and the request names this step. It may arrive
-together with the instruction that sent you here, or later. Nothing in this guide ever
-asks for write access a second time.
+**Do this only when we ask.** The request names this step. It may arrive with the
+instruction that sent you here, or later. After the ceremony, only a reshare asks for
+write access again. See [A reshare](RESHARE.md).
 
 First check that both secrets are still empty:
 
@@ -338,14 +346,22 @@ Otherwise grant it. One apply, one extra flag:
 ```bash
 terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT \
   -var grant_write_access=true
-# Plan: 2 to add, 0 to change, 0 to destroy.   # the two secretVersionAdder bindings
+# Plan: 4 to add, 0 to change, 0 to destroy.
+#   + attested_add          ×2   secretVersionAdder: the keygen adds a version
+#   + keygen_version_viewer ×2   secretmanager.viewer: the keygen lists the version numbers
 ```
 
-Tell us when it is applied. Step 11 revokes it again, and that is your last action.
+The keygen lists your versions before it writes, and it writes at an exact version
+number. The viewer role reads metadata only: version numbers, states and dates. It cannot
+read a share. You already give the same role to Fhenix operators in step 4. It exists
+only while write access is granted.
 
-> **This is the only flag we will ever ask you to pass.** A request for
-> `grant_write_access=true` that did not come from us, or that arrives after the ceremony
-> is done, is not legitimate. Stop and call us.
+Tell us when it is applied. Step 11 revokes it again.
+
+> **We ask for these flags only for a ceremony or a reshare.** The flags are
+> `grant_write_access=true` and `grant_reshare_read=true`. Each request comes from us and
+> names a release tag. A request that did not come from us, or that names no ceremony or
+> reshare, is not legitimate. Stop and call us.
 >
 > One case uses the same flag again, and it is not a second grant: a release that arrives
 > while your window is still open. There the flag keeps the window open. See
@@ -386,21 +402,25 @@ never a `user:` and never a `serviceAccount:`.
 
 ## 11. Revoke write access
 
-One closing action: revoke the write access the ceremony needed. Our write access is for
-bootstrap only. The module default is `grant_write_access = false`, so you revoke it by
-applying without the flag you used in [step 8](#8-grant-write-access).
+One closing action: revoke the write access the ceremony needed. Our write access is
+for a ceremony or a reshare only. The module default is `grant_write_access = false`.
+So you revoke it by applying without the flag you used in
+[step 8](#8-grant-write-access).
 
-Plan first. Expect exactly 2 destroys and nothing else:
+Plan first. Expect exactly 4 destroys and nothing else:
 
 ```bash
 terraform plan -var-file=../values.tfvars -var partner_project_id=$PROJECT
-#   Plan: 0 to add, 0 to change, 2 to destroy.
+#   Plan: 0 to add, 0 to change, 4 to destroy.
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-fhe-priv"]
 #   - google_secret_manager_secret_iam_member.attested_add["cofhe-tee-zk-signer"]
+#   - google_secret_manager_secret_iam_member.keygen_version_viewer["cofhe-tee-fhe-priv"]
+#   - google_secret_manager_secret_iam_member.keygen_version_viewer["cofhe-tee-zk-signer"]
 ```
 
-> If the plan destroys anything other than those two `attested_add` bindings, for example
-> a **secret** or an `attested_read` binding, **do not apply**. Contact us.
+> If the plan destroys anything other than those `attested_add` and
+> `keygen_version_viewer` bindings, for example a **secret** or an
+> `attested_read_image` binding, **do not apply**. Contact us.
 
 Apply:
 
@@ -416,15 +436,17 @@ terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=$PROJECT
 # success: a SUCCESS block with write_access_granted = false
-# failure: "CHECK FAILED: the share ... is still writable". Send it to Fhenix
+# failure: "CHECK FAILED: the share ... is still writable", or "... has a list binding,
+#          but grant_write_access is false". Send it to Fhenix
 ```
 
 > **Revoked is the default. If you forget this step, the result is safe.** The next apply
-> you run for any other reason revokes it, because you will not pass the flag again. The old behaviour was the opposite: an absent flag gave write access back,
-> silently. That is why we changed the default.
+> you run for any other reason revokes it, because you will not pass the flag again.
+> The old behaviour was the opposite: an absent flag gave write access back, silently.
+> That is why we changed the default.
 
-This is reversible. A future key rotation asks you for the flag again. Your read gates do
-not change. Decryption continues to work.
+This is reversible. A reshare or a future key rotation asks you for the flag again.
+Your read gates do not change. Decryption continues to work.
 
 ## The End
 
@@ -441,23 +463,28 @@ you need is in the tag. There is no other document.
 
 **What a release looks like.** We build new images and publish a tag here. The tag carries
 a new `values.tfvars` and a new `EXPECTED.md`. Some releases move one image; some move all
-three. `EXPECTED.md` names exactly what moved. Here all three changed:
+three. `EXPECTED.md` names exactly what moved. Here all three changed, and each reader
+keeps its previous image next to the new one (a tag A, see below):
 
 ```
 ## What changes from v1.1.0
 
-Changed: keygen, keygen-sha, teecryptor, teecryptor-sha, zee-k, zee-k-sha
+Changed: keygen, keygen-sha, teecryptor, zee-k
 
 | Pin | v1.1.0 | v1.2.0 | |
 |---|---|---|---|
 | Fhenix compute project | `fhenix-compute-project` | `fhenix-compute-project` | unchanged |
 | keygen (write gate) | `sha256:1111…` | `sha256:aaaa…` | **CHANGED** |
 | keygen source commit | `84028ad…` | `b71f004…` | **CHANGED** |
-| teecryptor (read gate on cofhe-tee-fhe-priv) | `sha256:2222…` | `sha256:bbbb…` | **CHANGED** |
-| teecryptor source commit | `9d20cf4…` | `c17ba39…` | **CHANGED** |
-| zee-k (read gate on cofhe-tee-zk-signer) | `sha256:3333…` | `sha256:cccc…` | **CHANGED** |
-| zee-k source commit | `397eca5…` | `e4d8812…` | **CHANGED** |
+| teecryptor (read gate on cofhe-tee-fhe-priv) | (absent) | `sha256:bbbb…` from `c17ba39…` | **ADDED** |
+| teecryptor, previous (read gate on cofhe-tee-fhe-priv) | `sha256:2222…` from `9d20cf4…` | `sha256:2222…` from `9d20cf4…` | unchanged |
+| zee-k (read gate on cofhe-tee-zk-signer) | (absent) | `sha256:cccc…` from `e4d8812…` | **ADDED** |
+| zee-k, previous (read gate on cofhe-tee-zk-signer) | `sha256:3333…` from `397eca5…` | `sha256:3333…` from `397eca5…` | unchanged |
 ```
+
+**Apply from the tag, never from `main`.** The `values.tfvars` on `main` is the one of
+the last release. It can be in an older shape than the code on `main`, and the next
+release renders it again. Only a tag carries a matching pair.
 
 **What you run.** Five minutes, from your existing clone. Set both variables again: a new
 terminal has neither, and an old one may still hold the previous tag.
@@ -482,30 +509,119 @@ terraform plan  -var-file=../values.tfvars -var partner_project_id=$PROJECT
 terraform apply -var-file=../values.tfvars -var partner_project_id=$PROJECT
 ```
 
-**What to expect. A rotation destroys bindings, and that is normal.** Each consumer's
-read binding names its image digest inside the member string, and that string cannot be
-edited. So a new consumer digest replaces the binding: one destroy and one add. The gate
-itself is updated in place.
+**What to expect.** Each reader gate lists 1 or 2 image digests. Each digest has its own
+read binding, keyed `<reader>@<digest>`. A new consumer image is added next to the old
+one, and the old one is removed in a later release. So the running consumers keep their
+read access during the whole upgrade.
 
-Per changed pin:
+Per changed row in `EXPECTED.md`:
 
 | What changed | What the plan shows |
 |---|---|
-| a consumer image (teecryptor, zee-k) | 1 change (its gate) + 1 destroy and 1 add (its read binding) |
-| the keygen image | 1 change (the write gate). While a ceremony window is open, also 1 destroy and 1 add per secret: the write bindings embed the keygen digest too |
-| a ceremony window opening | 2 adds (the write bindings) |
-| a ceremony window closing | 2 destroys (the write bindings), nothing added |
+| a consumer digest **ADDED** (teecryptor, zee-k) | 1 change (its gate lists the new digest) + 1 add (its read binding) |
+| a consumer digest **REMOVED** | 1 change (its gate drops the digest) + 1 destroy (its read binding) |
+| the keygen image | 2 changes (the write gate and the `keygen-reader` gate), plus the replacements below |
+| a ceremony window opening | 4 adds (`attested_add` and `keygen_version_viewer`, on each secret) |
+| a ceremony window closing | 4 destroys (the same four bindings), nothing added |
 
-For the three-image example above, expect **2 to add, 3 to change, 2 to destroy**. Match
-the plan against the **CHANGED** rows in `EXPECTED.md`. A resource that no row explains is
-still a reason to stop and send us the plan.
+A reader gate shows 1 change per release, however many of its rows move.
+
+A new keygen digest also replaces bindings. The `attested_add`,
+`keygen_version_viewer` and `reshare_read` bindings name the keygen digest, and a member string cannot be edited.
+So expect 1 destroy and 1 add for each of them that exists: the first two while write
+access is granted, `reshare_read` with `grant_reshare_read=true`.
+
+For the three-image example above, expect **2 to add, 4 to change, 0 to destroy**. Match
+the plan against the **CHANGED**, **ADDED** and **REMOVED** rows in `EXPECTED.md`. A
+resource that no row explains is still a reason to stop and send us the plan.
 
 Your plan also proves each new digest against its commit before it pins anything. That
 needs `gh` on this machine, as in [step 1](#1-prerequisites). If we ever add a tool, the
 release notes say so.
 
-Then run the `verify/` check from [step 6](#6-apply-then-verify) again, including its `init` line, and send us
-the output.
+Then run the `verify/` check from [step 6](#6-apply-then-verify) again, including its
+`init` line, and send us the output.
+
+### Tags A and B: an upgrade in two releases
+
+An upgrade of a consumer image, and a reshare, use two release tags of this repository:
+
+Every consumer upgrade uses tags A and B: partners pin exact digests, so a one-release
+swap leaves a window where old or new consumers cannot read. A low-risk upgrade may use
+one release with `keep_previous_readers=false` and accept a short restart window.
+
+1. **Tag A** keeps the previous image next to the new one. Each changed reader lists 2
+   images: the new one, and the previous one, marked *previous* in `EXPECTED.md`. Old
+   and new consumers can both read. The plan adds bindings and changes gates. It
+   destroys no read binding, unless the reader already listed 2 images: then the newer
+   of the two goes, and the older one stays, because it still runs.
+2. Fhenix deploys the new consumers and confirms that they work.
+3. **Tag B** removes the previous images. Each reader lists 1 image again. The plan
+   changes each gate and destroys the read binding of each previous image.
+
+A reader never lists more than 2 images. A release that keeps previous images and does
+not move a reader keeps that reader's list, so an unrelated release does not end an
+upgrade. Apply tag B after a successful roll, before any new upgrade. In a reshare, you
+apply tag A with the reshare flags and tag B without them. See
+[A reshare](RESHARE.md).
+
+### The first release with image lists (one time)
+
+<!-- FIRST-LIST-RELEASE -->
+Remove this section after every partner applies it.
+
+If you are not on the previous release, apply it first. Then apply the first list release.
+
+The first release with image lists changes how Terraform tracks your read bindings. The
+old resource `attested_read` held one binding per reader. The new resource
+`attested_read_image` holds one binding per reader image. The release tells Terraform to
+forget the old bindings, without a destroy. Then it adds the same members again under
+the new name. Your live read access does not stop at any time.
+
+The plan of that first release shows:
+
+```
+  # module.onboarding.google_iam_workload_identity_pool_provider.reader["keygen"] will be created
+  +   disabled = true
+  # module.onboarding.google_iam_workload_identity_pool_provider.reader["teecryptor"] will be updated in-place
+  -   && attribute.image_digest == "sha256:…"
+  +   && attribute.image_digest in ["sha256:…"]
+  # module.onboarding.google_secret_manager_secret_iam_member.attested_read["teecryptor"] will no longer be managed by Terraform, but will not be destroyed
+  # module.onboarding.google_secret_manager_secret_iam_member.attested_read_image["teecryptor@sha256:…"] will be created
+  …
+Plan: 3 to add, 2 to change, 0 to destroy.
+
+Warning: Some objects will no longer be managed by Terraform
+```
+
+- **3 to add:** one `attested_read_image` binding per reader, and the `keygen-reader`
+  gate. Each binding has the same member as the binding Terraform forgets. The gate is
+  disabled: it opens only for a reshare.
+- **2 to change:** the `teecryptor-reader` and `zee-k-reader` gates. The CEL changes from
+  `==` to `in [...]`. The digest stays the same.
+- **0 to destroy.** A destroy here is a reason to stop and send us the plan.
+- **"will no longer be managed" and the warning** are expected, once per reader. The old
+  bindings stay live, and the new resource now holds the same members.
+
+If the same release also moves an image, its rows in `EXPECTED.md` add their adds and
+destroys. Its gate change is one of the 2. If your project already has the
+`keygen-reader` gate, it shows as 1 change, not 1 add.
+
+**Apply that first release with read access on.** Do not pass `grant_read_access=false`
+in the same apply. Terraform forgets the old bindings and does not remove them. So with
+the brake on in that apply, the old members stay live, and no Terraform state holds them.
+If you need the brake, apply the release first, then apply the brake in a second,
+separate apply.
+If you cannot apply the release now, apply the brake with your installed release.
+
+If you applied the brake in the same apply by mistake, the old binding stays live. Remove
+it by hand, one call per secret and per old reader image:
+
+```
+gcloud secrets remove-iam-policy-binding <SECRET_ID> --project=<PARTNER_PROJECT_ID> \
+  --role=roles/secretmanager.secretAccessor \
+  --member="principalSet://iam.googleapis.com/projects/<PARTNER_PROJECT_NUMBER>/locations/global/workloadIdentityPools/cofhe-tee-reader-pool/attribute.image_digest/<OLD_IMAGE_DIGEST>"
+```
 
 ---
 
@@ -514,9 +630,11 @@ the output.
 Use this section when a release arrives between [step 8](#8-grant-write-access) and
 [step 11](#11-revoke-write-access). Your write access is granted, and the ceremony has not
 run yet. The steps are the same as in [Apply a later release](#apply-a-later-release), with
-one difference: `plan`, `apply` and `verify/` keep `-var grant_write_access=true`.
-Without it, the apply removes your two write bindings, and the keygen cannot write your
-share.
+one difference: `plan`, `apply` and `verify/` keep every flag from your tag A apply.
+That is `-var grant_write_access=true`, and also `-var grant_reshare_read=true` if you
+set it for a reshare. Without `grant_write_access`, the apply removes your write
+bindings, and the keygen cannot write your share. Without `grant_reshare_read`, the
+apply closes the keygen read, and the reshare fails.
 
 ```bash
 # Your GCP project ID, the same one you used in onboarding. Not the project number.
@@ -542,6 +660,7 @@ terraform -chdir=verify init -backend=false -input=false
 terraform -chdir=verify plan -input=false \
   -var-file=../../values.tfvars -var partner_project_id=$PROJECT \
   -var grant_write_access=true
+# In a reshare, add -var grant_reshare_read=true to all three commands.
 ```
 
 **What to expect.** The per-pin table in
@@ -550,12 +669,13 @@ window. When all three images change:
 
 | | Plan |
 |---|---|
-| With `-var grant_write_access=true` (correct) | **4 to add, 3 to change, 4 to destroy** |
-| Without it (the window closes) | 2 to add, 3 to change, 4 to destroy |
+| With `-var grant_write_access=true` (correct) | **6 to add, 4 to change, 4 to destroy** |
+| Without it (the window closes) | 2 to add, 4 to change, 4 to destroy |
 
-The four destroys are normal. Each binding that names an image digest is replaced: two
-write bindings for the new keygen digest, and one read binding for each new consumer
-digest. If your plan shows 2 to add, stop: the flag is missing. Do not apply.
+The four destroys are normal. The `attested_add` and `keygen_version_viewer` bindings
+name the keygen digest. So each one is replaced for the new keygen digest. The two other adds
+are the read bindings of the new consumer digests. If your plan shows 2 to add, stop.
+The flag is missing. Do not apply.
 
 `verify/` must show a `SUCCESS` block with `write_access_granted = true`. Send us the
 output.
@@ -564,14 +684,21 @@ Do not run [step 11](#11-revoke-write-access) now. We ask for it after the cerem
 
 ---
 
+## A reshare (only when Fhenix asks)
+
+See [RESHARE.md](RESHARE.md).
+
 ## Things you must never do
 
 - **Never** make an `image_digest` empty. This removes the pin from the gate.
+- **Never** remove an image from a reader's `images` list by hand, or add one. The
+  release decides the list. A removed image locks out the consumers that still run it.
+- **Never** apply from `main`. See [Apply a later release](#apply-a-later-release).
 - **Never** edit a `source_sha` to make a failing check pass. A failure means the digest
   and the commit do not belong together. Send it to us.
 - **Never** give `secretAccessor` on a share to a person or to a service account.
-- **Never** delete a secret. Each secret has `prevent_destroy`. Removal of a secret is
-  a deliberate, coordinated action.
+- **Never** delete a secret. Each secret has `prevent_destroy`. For secret versions,
+  see *Keep your old secret versions* in [RESHARE.md](RESHARE.md).
 - **Never** apply a configuration file that did not arrive through the agreed channel.
   Ask us first. The digest is the security boundary.
 - `grant_read_access = false` is your **emergency brake**. It removes your share from
@@ -596,9 +723,8 @@ Do not run [step 11](#11-revoke-write-access) now. We ask for it after the cerem
 
   That lasts one command. The next apply without it restores read access. To keep it off,
   set `grant_read_access = false` in your own `partner/terraform.tfvars`.
-  **`verify/` reports `CHECK FAILED … must have exactly one reader binding` while the
-  brake is on.** That is the brake working: there is no reader binding left. It is the one
-  case where that message is expected.
+  While the brake is on, run `verify/` with `-var grant_read_access=false`. It then
+  expects no reader binding on each secret.
 
 ## Ongoing commitment
 
@@ -606,6 +732,7 @@ Do not run [step 11](#11-revoke-write-access) now. We ask for it after the cerem
 |---|---|---|
 | Onboarding | This page, one time | 1 to 2 hours |
 | Directly after the ceremony | Revoke write access ([step 11](#11-revoke-write-access)) | 5 minutes |
+| A reshare, only when we ask | Apply tag A with the flags, then tag B without them. See [A reshare](RESHARE.md). | 2 × 5 minutes |
 | Each Fhenix release | Check out the new tag and apply. See [Apply a later release](#apply-a-later-release). | 5 minutes |
 | Always | Keep the project and Secret Manager available. Google manages both. No on-call. | none |
 
@@ -617,7 +744,8 @@ A digest says **which** image runs. It cannot say who built it: the attestation 
 carries no repository or commit claim, so your CEL cannot hold that proof. The gate holds
 it instead, one step earlier.
 
-It runs on every `plan` and every `apply`, in `partner/`, once per pinned image:
+It runs on every `plan` and every `apply`, in `partner/`, once per pinned image. A reader
+with 2 images is checked twice, once per digest:
 
 - A SLSA build provenance attestation exists for that exact digest.
 - That exact workflow file produced it, on `refs/heads/main`, in our repository. The
@@ -629,6 +757,11 @@ does not route around it.
 
 It does not say the commit is one you approve of. You choose which of our commits you
 trust, from our public history.
+
+The check reads each image from our public registry. So **we never delete a pinned
+image**. The registry repositories have no cleanup policy. If a pinned image is ever
+missing, your plan stops with `COULD NOT CHECK`. Do not remove the digest to make the
+plan pass. Send us the error.
 
 ### Why we do not ask for more
 
@@ -648,17 +781,21 @@ with hardware attestation, not with the credentials of a Fhenix employee.
 
 - The write gate pins the keygen image digest, the Fhenix compute project, and genuine
   Intel TDX Confidential Space.
-- Each read gate pins the image digest and the compute project of its consumer. It
-  requires debugging disabled since boot.
+- Each read gate pins every listed image digest and the compute project of its
+  consumer. It requires debugging disabled since boot.
 - Each identity on each secret is an attested `principalSet`. There is no `user:` and
   no `serviceAccount:`.
-- Each secret has exactly one reader. The reader is the consumer that owns that secret.
+- Each secret has one reader binding. Its members are the listed images of the consumer
+  that owns the secret, and the keygen image only while `grant_reshare_read = true`.
 - The write binding exists only while `grant_write_access = true`.
+- The `secretmanager.viewer` binding of the keygen exists only while
+  `grant_write_access = true`. The keygen write principal is its only member.
 
 > **What the gates say.** Each CEL requires genuine **Intel TDX Confidential Space**
 > hardware and software, the **STABLE** image tier (debug and experimental images are
-> rejected), a request from our compute project, and the exact image digest. The two
-> read gates also require **debugging disabled since boot**. If one condition fails,
+> rejected), a request from our compute project, and the exact image digest (a read gate
+> accepts each digest in its list, at most 2). The read
+> gates also require **debugging disabled since boot**. If one condition fails,
 > access is refused. There is no partial access and no fallback.
 
 ### Audit logs
@@ -710,27 +847,35 @@ A token is never required, and it changes nothing about what is proven.
 ### The same checks by hand
 
 If you prefer not to use `verify/`, these `gcloud` commands do the same checks. Put
-the three digests from `EXPECTED.md` at the tag into the first three lines. The
+the digests from `EXPECTED.md` at the tag into the first lines. A reader with 2 images
+lists both, in the order of `EXPECTED.md`, separated by `, `. Each `check` compares the
+whole digest condition, so a missing, an extra or a reordered digest is a `FAIL`. The
 script prints `OK` or `FAIL` for each gate. You do not compare anything by eye.
 
 ```bash
 PROJ=$PROJECT
-KEYGEN_DIGEST=sha256:…      # from EXPECTED.md at the tag
-TC_DIGEST=sha256:…
-ZK_DIGEST=sha256:…
+KEYGEN_DIGEST=sha256:…                 # from EXPECTED.md at the tag
+TC_DIGESTS='"sha256:…", "sha256:…"'    # one or two, quoted, in EXPECTED.md order
+ZK_DIGESTS='"sha256:…"'
 
-check() {   # provider, pool, expected digest
+check() {   # provider, pool, expected digest condition
   cel=$(gcloud iam workload-identity-pools providers describe "$1" \
         --location=global --workload-identity-pool="$2" \
         --project="$PROJ" --format='value(attributeCondition)')
   case "$cel" in
-    *"$3"*) echo "OK    $1 pins $3" ;;
-    *)      echo "FAIL  $1 does NOT pin $3" ;;
+    *"$3"*) echo "OK    $1 has $3" ;;
+    *)      echo "FAIL  $1 does NOT have $3" ;;
   esac
 }
-check cofhe-tee-keygen-provider cofhe-tee-keygen-pool "$KEYGEN_DIGEST"
-check teecryptor-reader         cofhe-tee-reader-pool "$TC_DIGEST"
-check zee-k-reader              cofhe-tee-reader-pool "$ZK_DIGEST"
+check cofhe-tee-keygen-provider cofhe-tee-keygen-pool "attribute.image_digest == \"$KEYGEN_DIGEST\""
+check teecryptor-reader         cofhe-tee-reader-pool "attribute.image_digest in [$TC_DIGESTS]"
+check zee-k-reader              cofhe-tee-reader-pool "attribute.image_digest in [$ZK_DIGESTS]"
+check keygen-reader             cofhe-tee-reader-pool "attribute.image_digest in [\"$KEYGEN_DIGEST\"]"
+
+# expect: True. The keygen read gate is disabled outside a reshare.
+gcloud iam workload-identity-pools providers describe keygen-reader \
+  --location=global --workload-identity-pool=cofhe-tee-reader-pool \
+  --project="$PROJ" --format='value(disabled)'
 
 for s in cofhe-tee-fhe-priv cofhe-tee-zk-signer; do
   echo "== $s =="
@@ -739,8 +884,9 @@ for s in cofhe-tee-fhe-priv cofhe-tee-zk-signer; do
 done
 ```
 
-Expect three `OK` lines. In the IAM tables, expect exactly one `secretVersionAdder`
-and one `secretAccessor` for each secret. Both must point to a
+Expect one `OK` line per `check`. In the IAM tables, expect one `secretAccessor` for
+each secret, with one member per reader image. Between steps 8 and 11, also expect one
+`secretVersionAdder` and one `secretmanager.viewer`. All must point to a
 `principalSet://…/attribute.image_digest/sha256:…`. There must be no `user:` and no
 `serviceAccount:`. If you see a `FAIL`, a person, or a service account: stop and
 contact us.

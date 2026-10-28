@@ -6,62 +6,59 @@ Do not edit by hand. The next release overwrites this file.
 Check every line below against your own `terraform plan` and your `verify/` output. If
 one string differs, stop and send us the output. Do not repair anything by hand.
 
-The **source commit** rows are the exception: they are proven by your plan rather than
-printed by it, and they never reach a CEL. Read them back with
+The **source commit** column is the exception: it is proven by your plan rather than
+printed by it, and it never reaches a CEL. Read it back with
 `terraform output provenance_verified`.
 
-| What | Expected |
-|---|---|
-| Fhenix compute project | `__COMPUTE_PROJECT__` |
-| keygen image digest (write gate) | `__KEYGEN_DIGEST__` |
-| keygen source commit | `__KEYGEN_SHA__` |
-| teecryptor image digest (read gate on `cofhe-tee-fhe-priv`) | `__TEECRYPTOR_DIGEST__` |
-| teecryptor source commit | `__TEECRYPTOR_SHA__` |
-| zee-k image digest (read gate on `cofhe-tee-zk-signer`) | `__ZEEK_DIGEST__` |
-| zee-k source commit | `__ZEEK_SHA__` |
+Fhenix compute project: `__COMPUTE_PROJECT__`.
+
+keygen is the write gate. teecryptor reads `cofhe-tee-fhe-priv` and zee-k reads
+`cofhe-tee-zk-signer`. A reader row marked *previous* is the previous release's image,
+kept while an upgrade is in progress.
+
+__PAIR_ROWS__
 
 This tag also carries the signed proof for each digest above, in `partner/bundles`:
 
 ```
-keygen-__KEYGEN_DIGEST_HEX__.jsonl
-teecryptor-__TEECRYPTOR_DIGEST_HEX__.jsonl
-zee-k-__ZEEK_DIGEST_HEX__.jsonl
+__BUNDLE_LIST__
 ```
 
-Your apply reads those three files. It calls no GitHub API. If one is absent, the check
+Your apply reads those files. It calls no GitHub API. If one is absent, the check
 downloads it from `api.github.com` instead, and the result is the same.
 
 __PREVIOUS_DIFF__
 
 ## Your plan
 
-If this is your **first** apply, expect **15 to add, 0 to change, 0 to destroy**. Two
+If this is your **first** apply, expect **__FIRST_APPLY_ADD__ to add, 0 to change, 0 to destroy**:
+14 fixed resources, plus one read binding per reader digest in the table above. Four
 more are added if you apply with `-var grant_write_access=true`, which we ask for only
-around a key ceremony. Your plan also shows a `provenance_verified` output; that is the
-proof the provenance check ran.
+around a key ceremony: on each secret, the write binding and the version-list binding.
+Two more are added with `-var grant_reshare_read=true`, only around a reshare. Your
+plan also shows a `provenance_verified` output; that is the proof the provenance check
+ran.
 
 If you are **upgrading** from an earlier tag, the table above is the authority: your
-plan must show those CHANGED rows taking effect and nothing else.
+plan must show those CHANGED, ADDED and REMOVED rows taking effect and nothing else.
+<!-- FIRST-LIST-RELEASE -->
+A *First release with image lists* block above, if present, adds its own lines.
 
-A changed **consumer** digest (teecryptor, zee-k) shows as 1 change plus 1 destroy and
-1 add: its read binding names the digest inside the member string, which cannot be
-edited, so the binding is replaced.
-
-A changed **keygen** digest shows as 1 change. If you hold write access at the time, it
-also destroys and adds the write binding, for the same reason: that binding names the
-digest too.
-
-Those destroys are expected. See *Apply a later release* in `PARTNER_GUIDE.md`.
+What each row does to the plan, and which bindings a new keygen digest replaces, is in
+*Apply a later release* in `PARTNER_GUIDE.md`. The destroys there are expected.
 
 ## Your verify run
+
+The two `_granted` lines print `true` only while you apply with those flags.
 
 ```
   + SUCCESS = {
       + partner_project      = "<your-project>"
-      + write_gate_pins      = "__KEYGEN_DIGEST__"
       + read_gates_pin       = {
-          + teecryptor = "__TEECRYPTOR_DIGEST__"
-          + zee-k      = "__ZEEK_DIGEST__"
+__READ_GATES__
         }
+      + reshare_read_granted = false
+      + write_access_granted = false
+      + write_gate_pins      = "__KEYGEN_DIGEST__"
     }
 ```
