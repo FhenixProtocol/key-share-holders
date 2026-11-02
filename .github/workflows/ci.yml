@@ -20,13 +20,13 @@ jobs:
       - name: syntax
         run: |
           set -e
-          for f in partner/verify-image.sh .github/scripts/render-diff.sh; do
+          for f in partner/verify-image.sh .github/scripts/*.sh; do
             echo "== $f"
             bash -n "$f"
           done
 
       - name: shellcheck
-        run: shellcheck -S warning partner/verify-image.sh .github/scripts/render-diff.sh
+        run: shellcheck -S warning partner/verify-image.sh .github/scripts/*.sh
 
       # The script must reject a malformed value before it reaches the network,
       # and it must refuse an image name it has no constants for.
@@ -66,3 +66,22 @@ jobs:
             terraform -chdir="$dir" init -backend=false -input=false
             terraform -chdir="$dir" validate
           done
+
+      # The read-gate logic decides who can read a share. A mock provider pins it.
+      - name: test (partner module)
+        run: |
+          terraform -chdir=partner/modules/partner-onboarding init -backend=false -input=false
+          terraform -chdir=partner/modules/partner-onboarding test
+
+      # The verifier checks live policy. A mock provider pins its postconditions.
+      - name: test (verify)
+        run: |
+          terraform -chdir=partner/verify init -backend=false -input=false
+          terraform -chdir=partner/verify test
+
+      # FIRST-LIST-RELEASE: drop "flat and" below.
+      # release.yml renders with this script. Each fixture is a previous
+      # release, flat and list; the console check reads the result through the
+      # real variable declarations.
+      - name: render a release
+        run: .github/scripts/test-render-readers.sh

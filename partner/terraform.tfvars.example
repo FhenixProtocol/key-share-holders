@@ -27,24 +27,30 @@ image_digest = "sha256:<keygen image digest>"
 # against the public Sigstore log before it pins anything. It never enters the CEL.
 source_sha = "<keygen source commit>"
 
-# Ceremony-only. The module default is false (write frozen). This line is present in
-# the `values.tfvars` of a ceremony release and ABSENT in the one after it; applying
-# the next tag removes the write binding (the plan shows exactly 2 destroys).
-grant_write_access = true
+# Ceremony and reshare only. The module default is false (write frozen). It is never
+# in `values.tfvars`: you pass `-var grant_write_access=true` only when we ask, and
+# apply without it afterwards. It also gives the keygen the version list
+# (secretmanager.viewer). The apply without it shows exactly 4 destroys.
+# grant_write_access = true
 
-# Only these exact consumer images may READ your share, each on ONE secret.
+# Only these exact consumer images may READ your share, each on ONE secret. A reader
+# lists 1 image, or 2 while an upgrade is in progress: the new one first, then the
+# previous one. One image per line.
 attested_readers = {
   teecryptor = {
     gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:<teecryptor image digest>"
-    source_sha     = "<teecryptor source commit>"
     secret_id      = "cofhe-tee-fhe-priv"
+    images = [
+      { image_digest = "sha256:<teecryptor image digest>", source_sha = "<teecryptor source commit>" },
+      { image_digest = "sha256:<previous teecryptor image digest>", source_sha = "<previous teecryptor source commit>" },
+    ]
   }
   zee-k = {
     gce_project_id = "fhenix-compute-project"
-    image_digest   = "sha256:<zee-k image digest>"
-    source_sha     = "<zee-k source commit>"
     secret_id      = "cofhe-tee-zk-signer"
+    images = [
+      { image_digest = "sha256:<zee-k image digest>", source_sha = "<zee-k source commit>" },
+    ]
   }
 }
 
