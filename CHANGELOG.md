@@ -5,6 +5,16 @@ release.
 
 `.github/workflows/release.yml` writes the entries. Do not edit them by hand.
 
+## v1.0.7 - 2026-11-05
+
+| Image | Digest | Source commit |
+|---|---|---|
+| keygen (write gate) | `sha256:781096676f8f7ad690e50b6cc58974b00f581d7f168e46bfb0d7a65a087fcc35` | `4a816b9090ded5ef8f6be75cb067fc7c20c7a9dc` |
+| teecryptor | `sha256:69e26a0c6300e32878e1ab735592d357c7bcfdc978cff3206a5d3840d945179a` | `7099fc89bb8ac423aca281c23a32b1ac5acca371` |
+| teecryptor, previous | `sha256:ae85f4d29ea0def0a6748bf75cf319e2236d9800c9fb5b22de5d09319dc79624` | `6dd84e784d359cbe81db9cc0a4ecb5b5d28e722d` |
+| zee-k | `sha256:7f757e6abcd4ff49e0c67e825505d2cd9f019f1a6a8649fc7a0257c5b9113fe1` | `91d81d3df5618a01106c2f345a6fa1eab91cc0de` |
+| zee-k, previous | `sha256:e773b9cc9f72dc87906d05c6f8e96ac8e8dd7480db3d6e66f3b3b20d58ea8ad4` | `47a59438caa7390582d4c470df7a02c42fa21d85` |
+
 ## v1.0.6 - 2026-10-19
 
 | Image | Digest | Source commit |
