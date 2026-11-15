@@ -5,6 +5,14 @@ release.
 
 `.github/workflows/release.yml` writes the entries. Do not edit them by hand.
 
+## v1.0.8 - 2026-11-15
+
+| Image | Digest | Source commit |
+|---|---|---|
+| keygen (write gate) | `sha256:781096676f8f7ad690e50b6cc58974b00f581d7f168e46bfb0d7a65a087fcc35` | `4a816b9090ded5ef8f6be75cb067fc7c20c7a9dc` |
+| teecryptor | `sha256:69e26a0c6300e32878e1ab735592d357c7bcfdc978cff3206a5d3840d945179a` | `7099fc89bb8ac423aca281c23a32b1ac5acca371` |
+| zee-k | `sha256:7f757e6abcd4ff49e0c67e825505d2cd9f019f1a6a8649fc7a0257c5b9113fe1` | `91d81d3df5618a01106c2f345a6fa1eab91cc0de` |
+
 ## v1.0.7 - 2026-11-05
 
 | Image | Digest | Source commit |
